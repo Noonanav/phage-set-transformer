@@ -33,7 +33,7 @@ from .data import create_data_loaders
 from .models import FlexibleStrainPhageTransformer, init_attention_weights
 from .training import train_model
 from .evaluation import evaluate_full
-from .utils import setup_logging, create_output_directory
+from .utils import setup_logging, create_output_directory, NumpyEncoder
 
 _log = logging.getLogger(__name__)
 
@@ -226,6 +226,13 @@ def run_cv_optimization(
         _log.info("Created new study '%s'", study_name)
 
     # ---------------------------------------------------------------- optimisation
+    if n_trials == 1:
+        # Single trial mode (likely SLURM) - always run the requested trial
+        trials_to_run = 1
+    else:
+        # Batch mode - use resume logic  
+        trials_to_run = max(0, n_trials - len(study.trials))
+
     study.optimize(
         lambda t: _cv_objective(
             t,
@@ -236,7 +243,7 @@ def run_cv_optimization(
             random_state=random_state,
             base_trial_dir=trial_dir,
         ),
-        n_trials=max(0, n_trials - len(study.trials)),
+        n_trials=trials_to_run,
         show_progress_bar=True,
     )
 
@@ -247,7 +254,7 @@ def run_cv_optimization(
 
     # ---------------------------------------------------------------- optional multi-seed retrain
     final_summary = {}
-    if final_seeds > 0:
+    if final_seeds > 0 and len(study.trials) > 0 and any(trial.value is not None for trial in study.trials):
         final_summary = _retrain_best_params(
             study,
             interactions=valid,
@@ -257,11 +264,17 @@ def run_cv_optimization(
             base_dir=base_dir,
             random_state=random_state,
         )
+        _log.info("Final retraining completed")
+    else:
+        _log.info("Skipping final retraining - no successful trials to retrain")
 
     # save study artefacts
     study.trials_dataframe().to_csv(base_dir / "all_trials.csv", index=False)
-    with (base_dir / "best_params.json").open("w") as f:
-        _json.dump(study.best_params, f, indent=2)
+    if len(study.trials) > 0 and any(trial.value is not None for trial in study.trials):
+        with (base_dir / "best_params.json").open("w") as f:
+            _json.dump(study.best_params, f, indent=2)
+    else:
+        _log.warning("No successful trials to save best parameters")
 
     return study, final_summary
 
@@ -360,7 +373,7 @@ def _retrain_best_params(
         per_seed_metrics=all_metrics,
     )
     with (base_dir / "multi_seed_summary.json").open("w") as f:
-        _json.dump(summary, f, indent=2)
+        _json.dump(summary, f, indent=2, cls=NumpyEncoder)
     return summary
 
 

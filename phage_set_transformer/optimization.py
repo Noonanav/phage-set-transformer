@@ -88,6 +88,9 @@ def _cv_objective(
     params = _suggest_params(trial)
     fold_mcc: List[float] = []
 
+    from .utils import get_device
+    device = get_device()
+
     # stratify by strain id so no strain leaks across folds
     unique_strains = interactions["strain"].unique()
     kf = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
@@ -127,8 +130,6 @@ def _cv_objective(
         )
         model = init_attention_weights(model)
 
-        from .utils import get_device
-        device = get_device()
         model = model.to(device)
 
         _, _val_mcc = train_model(
@@ -143,7 +144,7 @@ def _cv_objective(
             scheduler_type=params["scheduler_type"],
             warmup_ratio=params["warmup_ratio"],
             weight_decay=params["weight_decay"],
-            device=None,               # default cuda/auto
+            device=device,               # default cuda/auto
         )
 
         fold_mcc.append(_val_mcc)
@@ -290,6 +291,9 @@ def _retrain_best_params(
     all_metrics = []
     models = []
 
+    from .utils import get_device
+    device = get_device()
+
     for i in range(n_runs):
         seed = random_state + i
         train_df, test_df = _split_by_strain(interactions, seed)
@@ -310,8 +314,6 @@ def _retrain_best_params(
         )
         model = init_attention_weights(model)
 
-        from .utils import get_device
-        device = get_device()
         model = model.to(device)
 
         train_model(
@@ -326,9 +328,14 @@ def _retrain_best_params(
             scheduler_type=best_params["scheduler_type"],
             warmup_ratio=best_params["warmup_ratio"],
             weight_decay=best_params["weight_decay"],
+            device=device,               # default cuda/auto
         )
 
-        metrics = evaluate_full(model, test_loader, torch.device('cuda' if torch.cuda.is_available() else 'cpu'), best_params["use_phage_weights"])
+        metrics = evaluate_full(
+            model, 
+            test_loader, 
+            device, 
+            best_params["use_phage_weights"])
         all_metrics.append(metrics)
         models.append(model)
 

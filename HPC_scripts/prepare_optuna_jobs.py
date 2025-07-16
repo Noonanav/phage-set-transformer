@@ -115,6 +115,34 @@ def render_slurm(idx: int, cfg: dict, array: bool) -> str:
         seed_base=cfg["seed_base"],
     )
 
+def create_optuna_study(output_dir: str, study_name: str, random_seed: int = 42):
+    """Pre-create the Optuna study to avoid concurrency issues."""
+    try:
+        import optuna
+        from optuna.storages import RDBStorage
+        from optuna.samplers import TPESampler
+        from optuna.pruners import MedianPruner
+        
+        storage = RDBStorage(url=f"sqlite:///{output_dir}/study.db")
+        study = optuna.create_study(
+            study_name=study_name,
+            direction="maximize",
+            sampler=TPESampler(seed=random_seed),
+            pruner=MedianPruner(n_startup_trials=3),
+            storage=storage,
+            load_if_exists=True  # Won't error if already exists
+        )
+        print(f"Created Optuna study: {study_name}")
+        print(f"Database: {output_dir}/study.db")
+        return True
+    except ImportError:
+        print("Warning: Optuna not available. Jobs will create study individually (may cause conflicts).")
+        return False
+    except Exception as e:
+        print(f"Warning: Could not create study: {e}")
+        print("Jobs will attempt to create study individually.")
+        return False
+
 def main():
     p = argparse.ArgumentParser(description="Generate Slurm scripts for Optuna CV search")
     g = p.add_mutually_exclusive_group(required=True)
@@ -124,8 +152,12 @@ def main():
 
     cfg = CONFIG.copy()
     cfg["timestamp"] = datetime.now().strftime("%Y%m%d_%H%M%S")
-    cfg["seed_base"] = 42                       # base for reproducible per-trial seed
+    cfg["seed_base"] = 42
     cfg["output_dir"] = str(make_dir(Path(cfg["output_dir"]) / cfg["timestamp"]))
+
+    # Pre-create the Optuna study
+    study_name = f"pst_lr_{cfg['timestamp']}"
+    create_optuna_study(cfg["output_dir"], study_name, cfg["seed_base"])
 
     scripts_dir = make_dir(Path("slurm_scripts") / cfg["timestamp"])
 
@@ -139,6 +171,10 @@ def main():
             s = render_slurm(i, cfg, array=False)
             (scripts_dir / f"trial_{i}.slurm").write_text(s)
         print(f"Wrote {cfg['trial_total']} individual .slurm files to {scripts_dir}")
+
+    print(f"\nWorkflow ready!")
+    print(f"1. Submit jobs: python submit_slurm_dir.py {scripts_dir}")
+    print(f"2. Monitor study: sqlite3 {cfg['output_dir']}/study.db 'SELECT * FROM trials;'")
 
 if __name__ == "__main__":
     main()

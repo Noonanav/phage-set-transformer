@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import matthews_corrcoef
 from torch.utils.data import DataLoader
+import optuna
 
 from .data import (
     load_embeddings_flexible, 
@@ -164,7 +165,7 @@ def train_model(model: nn.Module,
                 num_epochs: int = 100,
                 learning_rate: float = 5e-5,
                 patience: int = 7,
-                device: str = 'cuda',
+                device: Optional[torch.device] = None,
                 use_phage_weights: bool = True,
                 scheduler_type: str = "one_cycle",
                 warmup_ratio: float = 0.1,
@@ -191,6 +192,9 @@ def train_model(model: nn.Module,
     Returns:
         Tuple of (history, best_val_mcc)
     """
+    if device is None:
+        device = get_device()
+        
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=learning_rate,

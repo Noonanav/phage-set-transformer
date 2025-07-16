@@ -62,18 +62,20 @@ def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> None:
         root_logger.addHandler(file_handler)
 
 
-def create_output_directory(base_dir: Optional[str] = None, prefix: str = "pst_results") -> str:
+def create_output_directory(base_dir: Optional[str] = None, prefix: str = "pst_results", timestamp: Optional[str] = None) -> str:
     """
     Create output directory with timestamp.
     
     Args:
         base_dir: Base directory to create output in (if None, uses current directory)
         prefix: Prefix for the output directory name
+        timestamp: Optional timestamp string (if None, generates current timestamp)
         
     Returns:
         Path to created directory
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     if base_dir:
         output_dir = os.path.join(base_dir, f"{prefix}_{timestamp}")
@@ -87,7 +89,6 @@ def create_output_directory(base_dir: Optional[str] = None, prefix: str = "pst_r
     os.makedirs(os.path.join(output_dir, "metrics"), exist_ok=True)
     
     return output_dir
-
 
 def get_device() -> torch.device:
     """

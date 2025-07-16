@@ -14,7 +14,7 @@ import torch
 
 # Package imports
 from .training import train_model_with_params
-from .optimization import run_optimization   # make sure optimization.py exists!
+from .optimization import run_cv_optimization
 from .evaluation import predict
 
 
@@ -31,13 +31,16 @@ def _add_common_data_args(p):
 # Sub-command: optimise
 # ---------------------------------------------------------------------
 def _cmd_optimize(args):
-    study = run_optimization(
+    study, _ = run_cv_optimization(
         interactions_path=args.interactions,
         strain_embeddings_path=args.strain_embeddings,
         phage_embeddings_path=args.phage_embeddings,
         n_trials=args.trials,
+        n_folds=args.folds,                    # ADD THIS LINE
+        final_seeds=args.final_seeds,          # ADD THIS LINE
         random_state=args.seed,
         study_name=args.study_name,
+        output_dir=getattr(args, 'output', None),
     )
     print(f"Best MCC = {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
@@ -90,11 +93,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     # optimise ---------------------------------------------------------
-    o = sub.add_parser("optimise", help="Hyper-parameter search with Optuna")
+    o = sub.add_parser("optimize", help="Hyper-parameter search with Optuna")
     _add_common_data_args(o)
     o.add_argument("-n", "--trials", type=int, default=50, help="Number of Optuna trials")
+    o.add_argument("-o", "--output", default=None, help="Output directory (defaults to timestamped)")
     o.add_argument("--study-name", default=None, help="Optuna study name (optional)")
     o.add_argument("--seed", type=int, default=42, help="Random seed")
+    o.add_argument("--folds", type=int, default=5, help="Number of CV folds")
+    o.add_argument("--final-seeds", type=int, default=5, help="Number of seeds for final training")
     o.set_defaults(func=_cmd_optimize)
 
     # train ------------------------------------------------------------

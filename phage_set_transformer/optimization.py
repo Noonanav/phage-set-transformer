@@ -26,6 +26,7 @@ from sklearn.model_selection import KFold
 from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner
 from optuna.storages import RDBStorage
+import torch
 
 # package-internal imports
 from .data import create_data_loaders
@@ -260,22 +261,17 @@ def run_cv_optimization(
 # -----------------------------------------------------------------------------#
 # Helpers
 # -----------------------------------------------------------------------------#
-def _load_embeddings(folder: str) -> Dict[str, np.ndarray]:
+def _load_embeddings(folder: str) -> Dict[str, Tuple[np.ndarray, List[str]]]:
     """Load *.npy* embedding files into a dict keyed by basename."""
-    data = {}
-    for file in Path(folder).glob("*.npy"):
-        data[file.stem] = np.load(file)
-    if not data:
-        raise FileNotFoundError(f"No .npy files found in {folder}")
-    return data
-
+    from .data import load_embeddings_flexible
+    return load_embeddings_flexible(folder)
 
 def _retrain_best_params(
     study: optuna.Study,
     *,
     interactions: pd.DataFrame,
-    strain_embeddings: Dict[str, np.ndarray],
-    phage_embeddings: Dict[str, np.ndarray],
+    strain_embeddings: Dict[str, Tuple[np.ndarray, List[str]]],
+    phage_embeddings: Dict[str, Tuple[np.ndarray, List[str]]],
     n_runs: int,
     base_dir: Path,
     random_state: int,
@@ -285,7 +281,6 @@ def _retrain_best_params(
     returning aggregate metrics (median, mean ± std) exactly like the notebook
     implementation :contentReference[oaicite:1]{index=1}.
     """
-    from .evaluation import metrics_to_dict  # assumes such util exists
 
     best_params = study.best_params
     all_metrics = []
@@ -325,7 +320,7 @@ def _retrain_best_params(
             weight_decay=best_params["weight_decay"],
         )
 
-        metrics = evaluate_full(model, test_loader, None, best_params["use_phage_weights"])
+        metrics = evaluate_full(model, test_loader, torch.device('cuda' if torch.cuda.is_available() else 'cpu'), best_params["use_phage_weights"])
         all_metrics.append(metrics)
         models.append(model)
 

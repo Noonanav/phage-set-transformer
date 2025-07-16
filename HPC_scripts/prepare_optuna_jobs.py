@@ -32,7 +32,7 @@ CONFIG = dict(
     folds=5,
     final_seeds=5,
     # ---------- Slurm resources ----------
-    account="anoonan",               # e.g. "es1" or "lr5"
+    account="ac_mak",               # e.g. "es1" or "lr5"
     partition="es1",            # or lr5, lr_bigmem, gpu
     qos="es_normal",
     time="00:30:00",            # HH:MM:SS  (per trial)
@@ -60,18 +60,23 @@ TEMPLATE = """\
 #SBATCH --error={out_dir}/slurm-%A_%a.err
 {array_directive}
 
-module purge
-module load python/3.10
-source ~/.bashrc
-conda activate {conda_env}
+TRIAL_ID=${{SLURM_ARRAY_TASK_ID:-{job_id}}}
+
+module load anaconda3
+conda activate {conda_env} 2>&1 || {{
+    echo "Direct activation failed, trying with conda init..."
+    conda init bash >/dev/null 2>&1
+    source ~/.bashrc >/dev/null 2>&1
+    conda activate {conda_env}
+}}
 
 set -euo pipefail
-echo "Running trial $TRIAL_ID  on $HOSTNAME  at $(date)"
+echo "Running trial $TRIAL_ID on $HOSTNAME at $(date)"
 
-python -m phage_set_transformer.cli optimise \\
+python -m phage_set_transformer.cli optimize \\
     --interactions {interactions} \\
     --strain-embeddings {strain_emb} \\
-    --phage-embeddings  {phage_emb} \\
+    --phage-embeddings {phage_emb} \\
     --trials 1 \\
     --folds {folds} \\
     --final-seeds {final_seeds} \\
@@ -89,23 +94,25 @@ def make_dir(p: Path) -> Path:
 def render_slurm(idx: int, cfg: dict, array: bool) -> str:
     return TEMPLATE.format(
         job_id=idx,
+        account=cfg["account"],
         partition=cfg["partition"],
         qos=cfg["qos"],
         time=cfg["time"],
+        nodes=cfg["nodes"],
         ntasks=cfg["ntasks"],
         cpus_per_task=cfg["cpus_per_task"],
         mem=cfg["mem"],
         maybe_gres=f"\n#SBATCH --gres={cfg['gres']}" if cfg["gres"] else "",
         out_dir=cfg["output_dir"],
-        array_directive="" if not array else "#SBATCH --array=0-{}%50".format(cfg["trial_total"] - 1),
+        array_directive="" if not array else f"#SBATCH --array=0-{cfg['trial_total']-1}%50",
+        conda_env=cfg["conda_env"],              # ← added
         interactions=cfg["interactions"],
         strain_emb=cfg["strain_emb"],
         phage_emb=cfg["phage_emb"],
         folds=cfg["folds"],
         final_seeds=cfg["final_seeds"],
-        out_file_prefix="trial",
         timestamp=cfg["timestamp"],
-        seed_base=cfg["seed_base"]
+        seed_base=cfg["seed_base"],
     )
 
 def main():
@@ -129,7 +136,7 @@ def main():
 
     else:  # split
         for i in range(cfg["trial_total"]):
-            s = render_slurm(i, cfg, array=False).replace("TRIAL_ID", str(i))
+            s = render_slurm(i, cfg, array=False)
             (scripts_dir / f"trial_{i}.slurm").write_text(s)
         print(f"Wrote {cfg['trial_total']} individual .slurm files to {scripts_dir}")
 

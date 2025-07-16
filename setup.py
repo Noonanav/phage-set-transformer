@@ -30,9 +30,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "pst-optimize=phage_set_transformer.cli:optimize",
-            "pst-train=phage_set_transformer.cli:train",
-            "pst-predict=phage_set_transformer.cli:predict",
+            "pst=phage_set_transformer.cli:main",
         ],
     },
     include_package_data=True,

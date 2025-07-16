@@ -127,6 +127,10 @@ def _cv_objective(
         )
         model = init_attention_weights(model)
 
+        from .utils import get_device
+        device = get_device()
+        model = model.to(device)
+
         _, _val_mcc = train_model(
             model,
             train_loader,
@@ -305,6 +309,10 @@ def _retrain_best_params(
             **{k: v for k, v in best_params.items() if k in _model_kw()}
         )
         model = init_attention_weights(model)
+
+        from .utils import get_device
+        device = get_device()
+        model = model.to(device)
 
         train_model(
             model,

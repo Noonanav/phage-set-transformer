@@ -30,7 +30,7 @@ CONFIG = dict(
     output_dir="~/scratch/optuna_runs",
     trial_total=200,
     folds=5,
-    final_seeds=5,
+    final_seeds=0,
     # ---------- Slurm resources ----------
     account="ac_mak",               # e.g. "es1" or "lr5"
     partition="es1",            # or lr5, lr_bigmem, gpu
@@ -143,17 +143,55 @@ def create_optuna_study(output_dir: str, study_name: str, random_seed: int = 42)
         print("Jobs will attempt to create study individually.")
         return False
 
+RETRAIN_TEMPLATE = """\
+#!/bin/bash
+#SBATCH --job-name=pst_retrain_{timestamp}
+#SBATCH --account={account}
+#SBATCH --partition={partition}
+#SBATCH --qos={qos}
+#SBATCH --time=02:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=80G{maybe_gres}
+#SBATCH --output={out_dir}/retrain-%j.out
+#SBATCH --error={out_dir}/retrain-%j.err
+#SBATCH --dependency=afterany:{array_job_id}
+
+module load anaconda3
+conda activate {conda_env}
+
+set -euo pipefail
+echo "Starting final retraining at $(date)"
+
+# Run final retraining with best parameters
+python -m phage_set_transformer.cli optimize \\
+    --interactions {interactions} \\
+    --strain-embeddings {strain_emb} \\
+    --phage-embeddings {phage_emb} \\
+    --trials 0 \\
+    --final-seeds 10 \\
+    --output {out_dir} \\
+    --study-name pst_lr_{timestamp}
+
+echo "Final retraining completed at $(date)"
+"""
+
+# Update the main() function:
 def main():
     p = argparse.ArgumentParser(description="Generate Slurm scripts for Optuna CV search")
     g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument("--array", action="store_true", help="Write a single array job")
-    g.add_argument("--split", action="store_true", help="Write one file per trial")
+    g.add_argument("--array", action="store_true", help="Write array job + retraining job")
+    g.add_argument("--split", action="store_true", help="Write individual trial jobs")
     args = p.parse_args()
 
     cfg = CONFIG.copy()
     cfg["timestamp"] = datetime.now().strftime("%Y%m%d_%H%M%S")
     cfg["seed_base"] = 42
     cfg["output_dir"] = str(make_dir(Path(cfg["output_dir"]) / cfg["timestamp"]))
+
+    # Force final_seeds=0 for optimization jobs
+    cfg["final_seeds"] = 0
 
     # Pre-create the Optuna study
     study_name = f"pst_lr_{cfg['timestamp']}"
@@ -162,19 +200,54 @@ def main():
     scripts_dir = make_dir(Path("slurm_scripts") / cfg["timestamp"])
 
     if args.array:
+        # Generate optimization array job
         script = render_slurm(0, cfg, array=True)
-        (scripts_dir / "optuna_array.slurm").write_text(script)
-        print(f"Wrote job array file: {scripts_dir/'optuna_array.slurm'}")
+        opt_script_path = scripts_dir / "optuna_array.slurm"
+        opt_script_path.write_text(script)
+        
+        # Generate retraining job (will be submitted with dependency)
+        retrain_script = RETRAIN_TEMPLATE.format(
+            timestamp=cfg["timestamp"],
+            account=cfg["account"],
+            partition=cfg["partition"],
+            qos=cfg["qos"],
+            maybe_gres=f"\n#SBATCH --gres={cfg['gres']}" if cfg["gres"] else "",
+            out_dir=cfg["output_dir"],
+            array_job_id="PLACEHOLDER",  # Will be replaced in submission script
+            conda_env=cfg["conda_env"],
+            interactions=cfg["interactions"],
+            strain_emb=cfg["strain_emb"],
+            phage_emb=cfg["phage_emb"],
+        )
+        retrain_script_path = scripts_dir / "retrain.slurm"
+        retrain_script_path.write_text(retrain_script)
+        
+        # Generate submission script
+        submit_script = f"""#!/bin/bash
+# Submit optimization array job
+ARRAY_JOB=$(sbatch --parsable {opt_script_path})
+echo "Submitted optimization array job: $ARRAY_JOB"
 
-    else:  # split
+# Submit retraining job with dependency
+sed "s/PLACEHOLDER/$ARRAY_JOB/" {retrain_script_path} > {scripts_dir}/retrain_final.slurm
+RETRAIN_JOB=$(sbatch --parsable {scripts_dir}/retrain_final.slurm)
+echo "Submitted retraining job: $RETRAIN_JOB (depends on $ARRAY_JOB)"
+
+echo "Workflow submitted!"
+echo "Monitor: watch 'squeue -u $USER'"
+"""
+        submit_path = scripts_dir / "submit_all.sh"
+        submit_path.write_text(submit_script)
+        submit_path.chmod(0o755)
+        
+        print(f"Generated optimization and retraining jobs in {scripts_dir}")
+        print(f"To submit: {submit_path}")
+
+    else:  # split mode unchanged
         for i in range(cfg["trial_total"]):
             s = render_slurm(i, cfg, array=False)
             (scripts_dir / f"trial_{i}.slurm").write_text(s)
         print(f"Wrote {cfg['trial_total']} individual .slurm files to {scripts_dir}")
-
-    print(f"\nWorkflow ready!")
-    print(f"1. Submit jobs: python submit_slurm_dir.py {scripts_dir}")
-    print(f"2. Monitor study: sqlite3 {cfg['output_dir']}/study.db 'SELECT * FROM trials;'")
 
 if __name__ == "__main__":
     main()

@@ -240,7 +240,10 @@ def run_cv_optimization(
         show_progress_bar=True,
     )
 
-    _log.info("Best median MCC = %.4f", study.best_value)
+    if len(study.trials) > 0 and any(trial.value is not None for trial in study.trials):
+        _log.info("Best median MCC = %.4f", study.best_value)
+    else:
+        _log.info("No successful trials yet (all trials pruned or failed)")
 
     # ---------------------------------------------------------------- optional multi-seed retrain
     final_summary = {}

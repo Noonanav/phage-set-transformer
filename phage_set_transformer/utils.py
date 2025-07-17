@@ -17,15 +17,13 @@ class NumpyEncoder(json.JSONEncoder):
     """Special json encoder for numpy types."""
     
     def default(self, obj: Any) -> Any:
-        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
-                            np.int16, np.int32, np.int64, np.uint8,
-                            np.uint16, np.uint32, np.uint64)):
+        if isinstance(obj, np.integer):  # ← Covers all integer types
             return int(obj)
-        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+        elif isinstance(obj, np.floating):  # ← Covers all float types  
             return float(obj)
-        elif isinstance(obj, (np.ndarray,)):
+        elif isinstance(obj, np.ndarray):
             return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
+        return super().default(obj)
 
 
 def setup_logging(level: str = "INFO", log_file: Optional[str] = None) -> None:

@@ -345,25 +345,47 @@ def _retrain_best_params(
             warmup_ratio=best_params["warmup_ratio"],
             weight_decay=best_params["weight_decay"],
             device=device,               # default cuda/auto
+            metrics_dir=str(base_dir / "training_metrics"),
         )
 
         metrics = evaluate_full(
             model, 
             test_loader, 
             device, 
-            best_params["use_phage_weights"])
+            best_params["use_phage_weights"],
+            return_attention=True,
+            output_dir=str(base_dir / "final_models" / f"seed_{seed}_evaluation"))
         all_metrics.append(metrics)
         models.append(model)
+
+        full_model_config = {
+            'embedding_dim': emb_dim,
+            'hidden_dim': 512,  # Add the default used
+            'num_heads': best_params['num_heads'],
+            'strain_inds': best_params['strain_inds'], 
+            'phage_inds': best_params['phage_inds'],
+            'num_isab_layers': best_params['num_isab_layers'],
+            'num_seeds': best_params['num_seeds'],
+            'dropout': best_params['dropout'],
+            'ln': best_params['ln'],
+            'temperature': best_params['temperature'],
+            'use_cross_attention': best_params['use_cross_attention'],
+            'classifier_hidden_layers': best_params['classifier_hidden_layers'],
+            'classifier_hidden_dim': 512,  # Add the default used
+            'activation_function': best_params['activation_function'],
+            'chunk_size': 128,  # Add the default used
+        }
 
         # persist each seed model
         torch_save = dict(
             model_state_dict=model.state_dict(),
+            config={'model': full_model_config}, 
             seed=seed,
             embedding_dim=emb_dim,
             metrics=metrics,
             best_params=best_params,
         )
-        torch.save(torch_save, base_dir / f"model_seed_{seed}.pt")
+        torch.save(torch_save, base_dir / "final_models" / f"model_seed_{seed}.pt")
 
     mccs = [m["mcc"] for m in all_metrics]
     summary = dict(

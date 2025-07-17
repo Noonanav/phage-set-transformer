@@ -149,7 +149,7 @@ RETRAIN_TEMPLATE = """\
 #SBATCH --account={account}
 #SBATCH --partition={partition}
 #SBATCH --qos={qos}
-#SBATCH --time=02:00:00
+#SBATCH --time=00:30:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -159,7 +159,12 @@ RETRAIN_TEMPLATE = """\
 #SBATCH --dependency=afterany:{array_job_id}
 
 module load anaconda3
-conda activate {conda_env}
+conda activate {conda_env} 2>&1 || {{
+    echo "Direct activation failed, trying with conda init..."
+    conda init bash >/dev/null 2>&1
+    source ~/.bashrc >/dev/null 2>&1
+    conda activate {conda_env}
+}}
 
 set -euo pipefail
 echo "Starting final retraining at $(date)"

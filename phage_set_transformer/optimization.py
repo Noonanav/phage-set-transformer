@@ -46,7 +46,7 @@ def _suggest_params(trial: optuna.Trial) -> Dict[str, Any]:
     return dict(
         # architecture
         use_cross_attention=trial.suggest_categorical("use_cross_attention", [True, False]),
-        num_heads=trial.suggest_categorical("num_heads", [4, 8, 16]),
+        num_heads=trial.suggest_categorical("num_heads", [2, 4, 8]),
         temperature=trial.suggest_float("temperature", 0.01, 1.0, log=True),
         strain_inds=trial.suggest_categorical("strain_inds", [64, 128, 192, 256]),
         phage_inds=trial.suggest_categorical("phage_inds", [32, 64, 96, 128]),
@@ -57,11 +57,11 @@ def _suggest_params(trial: optuna.Trial) -> Dict[str, Any]:
         use_residual_classifier=trial.suggest_categorical("use_residual_classifier", [False, True]),
         # classifier
         dropout=trial.suggest_float("dropout", 0.0, 0.3),
-        classifier_hidden_layers=trial.suggest_int("classifier_hidden_layers", 1, 3),
+        classifier_hidden_layers=trial.suggest_int("classifier_hidden_layers", 2, 6),
         activation_function=trial.suggest_categorical("activation_function", ["relu", "gelu", "silu"]),
         # training
         learning_rate=trial.suggest_float("learning_rate", 1e-5, 5e-4, log=True),
-        batch_size=trial.suggest_categorical("batch_size", [128, 256, 512]),
+        batch_size=trial.suggest_categorical("batch_size", [32, 64, 128]),
         use_phage_weights=trial.suggest_categorical("use_phage_weights", [True, False]),
         weight_decay=trial.suggest_float("weight_decay", 0.0, 0.1),
         # scheduler

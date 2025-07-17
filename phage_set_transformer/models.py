@@ -180,6 +180,19 @@ class FlexibleSetEncoder(nn.Module):
             H = layer(H, mask=mask)
         return H
 
+class ResidualBlock(nn.Module):
+    """Single residual block: H = H + (LayerNorm→Linear→Activation→Dropout)(H)"""
+    def __init__(self, dim: int, dropout: float, ln: bool, activation):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Linear(dim, dim),                                    # Same dimension
+            nn.LayerNorm(dim) if ln else nn.Identity(),
+            activation,
+            nn.Dropout(dropout)
+        )
+    
+    def forward(self, x):
+        return x + self.block(x)  # RESIDUAL: input + transformation
 
 class FlexibleStrainPhageTransformer(nn.Module):
     """
@@ -202,7 +215,8 @@ class FlexibleStrainPhageTransformer(nn.Module):
                 classifier_hidden_dim: Optional[int] = 512,
                 activation_function: str = "gelu",
                 chunk_size: int = 128,
-                normalization_type: str = "none"):  # ADD THIS LINE
+                normalization_type: str = "none",
+                use_residual_classifier: bool = False):  # ADD THIS LINE
         super().__init__()
 
         # Save parameters
@@ -278,10 +292,17 @@ class FlexibleStrainPhageTransformer(nn.Module):
 
         # Hidden layers
         for _ in range(classifier_hidden_layers - 1):
-            classifier_layers.append(nn.Linear(classifier_hidden_dim, classifier_hidden_dim))
-            classifier_layers.append(nn.LayerNorm(classifier_hidden_dim) if ln else nn.Identity())
-            classifier_layers.append(self.activation)
-            classifier_layers.append(nn.Dropout(dropout))
+            if use_residual_classifier:
+                # Use residual block
+                classifier_layers.append(
+                    ResidualBlock(classifier_hidden_dim, dropout, ln, self.activation)
+                )
+            else:
+                # Regular linear layer
+                classifier_layers.append(nn.Linear(classifier_hidden_dim, classifier_hidden_dim))
+                classifier_layers.append(nn.LayerNorm(classifier_hidden_dim) if ln else nn.Identity())
+                classifier_layers.append(self.activation)
+                classifier_layers.append(nn.Dropout(dropout))
 
         # Output layer
         classifier_layers.append(nn.Linear(classifier_hidden_dim, 1))
@@ -314,7 +335,7 @@ class FlexibleStrainPhageTransformer(nn.Module):
         elif self.normalization_type == "l2_norm":
             strain_genes = F.normalize(strain_genes, p=2, dim=-1)
             phage_genes = F.normalize(phage_genes, p=2, dim=-1)
-            
+
         # Optional dimension expansion
         strain_genes = self.strain_expand(strain_genes)
         phage_genes = self.phage_expand(phage_genes)

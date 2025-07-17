@@ -1,21 +1,27 @@
 # Phage Set Transformer
 
-A PyTorch implementation of Set Transformer architecture for predicting phage-bacteria interactions using biological language model embeddings.
+A PyTorch implementation of Set Transformer architecture for predicting strain-level phage-host interactions using biological language model embeddings. Designed for phage therapy applications, microbiome engineering, and biological research.
 
 ## 🔬 Overview
 
-This package provides tools for training and optimizing Set Transformer models to predict strain-level interactions between bacterial strains and phages. The model processes variable-length sets of gene embeddings for both organisms and learns to predict their interaction potential, enabling researchers to understand phage-bacteria dynamics and mediators of phage-host interactions.
+This package provides tools for training and optimizing Set Transformer models to predict one-to-one strain-level interactions between bacterial strains and phages. The model processes variable-length sets of gene embeddings for both organisms and learns to predict their interaction potential, enabling researchers to:
+
+- **Phage Therapy**: Identify optimal phage candidates for targeting specific bacterial pathogens
+- **Microbiome Engineering**: Understand and manipulate phage-bacteria dynamics in complex microbial communities  
+- **Biological Research**: Discover mediators of phage-host interactions and evolutionary patterns
 
 ### Key Features
 
 - **Set-based Architecture**: Handles variable-length gene sets without padding inefficiencies
+- **Advanced Normalization**: Input normalization options (Layer Norm, L2 Norm) for improved training stability
+- **Deep Residual Classifiers**: Residual connections enable training of deeper, more sophisticated interaction predictors
 - **Scalable**: Works with datasets from small lab studies to large-scale microbiome surveys
 - **Cross-validation Optimization**: Built-in hyperparameter search with k-fold cross-validation
 - **Flexible Data Loading**: Supports multiple embedding formats (arrays, dictionaries)
 - **HPC Integration**: Ready-to-use SLURM scripts for large-scale optimization
 - **Comprehensive Evaluation**: Full metrics, visualizations, and attention analysis
 - **Production Ready**: CLI interface and Python API for different use cases
-- **Microbiome-focused**: Designed for understanding phage-bacteria dynamics in complex microbial communities
+- **Microbiome-focused**: Designed for understanding phage-bacteria dynamics in therapeutic and engineering contexts
 
 ## 🚀 Quick Start
 
@@ -44,14 +50,16 @@ pst optimize \
     --trials 50 \
     --output results/
 
-# Train a model with specific parameters
+# Train a model with specific parameters and advanced features
 pst train \
     --interactions data/interactions.csv \
     --strain-embeddings data/embeddings/strains/ \
     --phage-embeddings data/embeddings/phages/ \
+    --normalization layer_norm \
+    --residual-classifier \
     --output models/
 
-# Make predictions
+# Make predictions for phage therapy candidate selection
 pst predict \
     --model models/model.pt \
     --strain-embeddings data/embeddings/strains/ \
@@ -74,7 +82,7 @@ strain_002,phage_A,1
 
 ### Embeddings
 
-The package supports two embedding formats:
+The package supports two embedding formats from biological language models:
 
 **Format 1: Simple Arrays**
 ```python
@@ -121,6 +129,10 @@ pst train [OPTIONS]
 - `--lr`: Learning rate (default: 1e-4)
 - `--batch-size`: Batch size (default: 64)
 - `--patience`: Early stopping patience (default: 10)
+
+**Architecture Parameters:**
+- `--normalization {none,layer_norm,l2_norm}`: Input normalization type (default: none)
+- `--residual-classifier`: Enable residual connections in classifier for deeper networks
 
 ### Prediction Command
 
@@ -170,6 +182,9 @@ results = train_model_with_params(
     num_heads=8,
     strain_inds=256,
     phage_inds=128,
+    normalization_type='layer_norm',          # NEW: Input normalization
+    use_residual_classifier=True,             # NEW: Deep residual classifier
+    classifier_hidden_layers=4,               # Deeper classifier with residuals
     # Training
     num_epochs=100,
     learning_rate=1e-4,
@@ -191,7 +206,10 @@ predictions = predict(
     return_attention=True
 )
 
-print(f"Positive predictions: {predictions['predicted_interaction'].sum()}")
+# Identify high-confidence therapeutic candidates
+positive_predictions = predictions[predictions['predicted_interaction'] == 1]
+high_confidence = positive_predictions[positive_predictions['interaction_probability'] > 0.8]
+print(f"High-confidence phage therapy candidates: {len(high_confidence)}")
 ```
 
 ## 🏭 HPC Usage
@@ -245,25 +263,41 @@ CONFIG = dict(
 
 ## ⚙️ Model Architecture
 
-The Set Transformer architecture is particularly well-suited for microbiome research as it naturally handles the variable-length nature of gene sets across different bacterial strains and phages. The architecture consists of:
+The Set Transformer architecture is specifically designed for phage-host interaction prediction, naturally handling the variable-length nature of gene sets across different bacterial strains and phages. This is crucial for therapeutic applications where bacterial pathogens and phage candidates vary significantly in genome size and gene content.
 
-1. **Set Encoders**: Process variable-length gene sets using Induced Set Attention Blocks (ISABs)
-2. **Cross-Attention** (optional): Allow strain and phage representations to interact, modeling biological specificity
-3. **Pooling**: Aggregate set representations using Pooling by Multihead Attention (PMA)
-4. **Classification**: Multi-layer perceptron for final interaction prediction
+### Architecture Components
 
-This design enables the model to learn meaningful representations regardless of genome size differences, making it ideal for diverse microbiome datasets where bacterial strains and phages can vary significantly in gene content.
+1. **Input Normalization** (NEW): Stabilizes training with biological embeddings
+   - `layer_norm`: Normalizes across embedding dimensions
+   - `l2_norm`: Unit-normalizes gene embeddings  
+   - `none`: No normalization (original behavior)
+
+2. **Set Encoders**: Process variable-length gene sets using Induced Set Attention Blocks (ISABs)
+
+3. **Cross-Attention** (optional): Allow strain and phage representations to interact, modeling biological specificity crucial for therapy success
+
+4. **Pooling**: Aggregate set representations using Pooling by Multihead Attention (PMA)
+
+5. **Deep Residual Classifier**: Multi-layer perceptron with residual connections
+   - Enables training of deeper networks (4-8 layers) for complex interaction patterns
+   - Critical for capturing intricate phage-host compatibility rules
+   - Particularly important for therapeutic applications requiring high precision
+
+This design enables the model to learn meaningful representations regardless of genome size differences, making it ideal for diverse therapeutic and research datasets where bacterial strains and phages can vary significantly in gene content.
 
 ### Key Hyperparameters
 
-| Parameter | Description | Typical Range |
-|-----------|-------------|---------------|
-| `hidden_dim` | Internal representation dimension | 256-1024 |
-| `num_heads` | Attention heads | 4-16 |
-| `strain_inds` | Inducing points for strains | 64-512 |
-| `phage_inds` | Inducing points for phages | 32-256 |
-| `temperature` | Attention temperature | 0.01-1.0 |
-| `dropout` | Dropout rate | 0.0-0.3 |
+| Parameter | Description | Typical Range | Impact |
+|-----------|-------------|---------------|---------|
+| `hidden_dim` | Internal representation dimension | 256-1024 | Model capacity |
+| `num_heads` | Attention heads | 4-16 | Representation diversity |
+| `strain_inds` | Inducing points for strains | 64-512 | Strain set complexity |
+| `phage_inds` | Inducing points for phages | 32-256 | Phage set complexity |
+| `temperature` | Attention temperature | 0.01-1.0 | Attention sharpness |
+| `dropout` | Dropout rate | 0.0-0.3 | Regularization |
+| `normalization_type` | Input normalization | none/layer_norm/l2_norm | Training stability |
+| `use_residual_classifier` | Residual connections | True/False | Deep classifier training |
+| `classifier_hidden_layers` | Classifier depth | 1-8 | Decision complexity |
 
 ## 📊 Output Files
 
@@ -274,10 +308,13 @@ results/
 ├── best_params.json         # Best hyperparameters
 ├── all_trials.csv          # All trial results
 ├── multi_seed_summary.json  # Final model statistics
-└── models/
+└── final_models/
     ├── model_seed_42.pt     # Model for each seed
     ├── model_seed_43.pt
-    └── ...
+    └── seed_42_evaluation/  # Per-seed evaluation results
+        ├── predictions.csv
+        ├── confusion_matrix.png
+        └── attention_weights.npz
 ```
 
 ### Training Results
@@ -286,10 +323,10 @@ models/
 ├── config.json             # Training configuration
 ├── models/model.pt          # Trained model
 ├── plots/
-│   ├── training_history.png
-│   ├── confusion_matrix.png
-│   ├── roc_curve.png
-│   └── pr_curve.png
+│   ├── final_history.png    # Training curves
+│   ├── evaluation_confusion_matrix.png
+│   ├── evaluation_roc_curve.png
+│   └── evaluation_pr_curve.png
 ├── predictions.csv          # Test set predictions
 └── training.log            # Training logs
 ```
@@ -301,27 +338,64 @@ models/
 **Out of Memory**
 - Reduce `batch_size` or `strain_inds`/`phage_inds`
 - Enable chunking: set `chunk_size=64` in model config
+- Use smaller `hidden_dim` (256-512)
 
 **Poor Performance**
+- Try input normalization: `--normalization layer_norm`
+- Enable residual classifier: `--residual-classifier` with deeper networks
 - Increase model capacity: `hidden_dim`, `num_heads`
-- Enable cross-attention: `use_cross_attention=True` (important for capturing phage-bacteria specificity)
-- Adjust class weighting: `use_phage_weights=True` (handles imbalanced interaction data common in microbiome studies)
-- Consider strain-based splitting to avoid data leakage in microbiome datasets
+- Enable cross-attention: `use_cross_attention=True` (crucial for phage-host specificity)
+- Adjust class weighting: `use_phage_weights=True` (handles therapeutic dataset imbalance)
+
+**Training Instability**
+- Use `normalization_type='layer_norm'` for stable gradients
+- Reduce learning rate to `1e-5` for large models
+- Enable residual connections for deep classifiers
+- Monitor gradient norms in training logs
 
 **Imbalanced Datasets**
 - Use `use_phage_weights=True` to automatically weight rare positive interactions
-- Adjust `temperature` parameter (0.01-0.1) for sharper attention on important genes
+- Try `normalization_type='l2_norm'` for consistent embedding scales
 - Monitor both MCC and F1 scores as they handle class imbalance better than accuracy
+- Consider stratified sampling in cross-validation
 
 **Slow Training**
 - Increase `batch_size` if memory allows
 - Use `scheduler_type="one_cycle"` for faster convergence
 - Reduce `patience` for earlier stopping
+- Use fewer `classifier_hidden_layers` without residuals
 
 **Data Loading Errors**
 - Verify embedding file formats match expectations
 - Check that all strain/phage IDs in interactions have corresponding embedding files
-- Ensure consistent embedding dimensions across files
+- Ensure consistent embedding dimensions (384 for ESM, 1024 for other models)
+- Validate that embeddings contain gene-level, not organism-level representations
+
+### Performance Optimization
+
+**Memory Usage:**
+```python
+# For large datasets
+model = FlexibleStrainPhageTransformer(
+    hidden_dim=256,           # Smaller hidden dimension
+    strain_inds=128,          # Fewer inducing points
+    phage_inds=64,
+    chunk_size=32,            # Enable attention chunking
+    normalization_type='l2_norm'  # More memory efficient than layer_norm
+)
+```
+
+**Training Speed:**
+```python
+# For faster training
+train_model_with_params(
+    batch_size=128,           # Larger batches
+    use_residual_classifier=False,  # Simpler classifier
+    classifier_hidden_layers=2,     # Fewer layers
+    scheduler_type='one_cycle',     # Faster convergence
+    patience=5                      # Earlier stopping
+)
+```
 
 ### Environment Issues
 
@@ -366,21 +440,21 @@ phage_set_transformer/
 ├── __init__.py           # Package exports
 ├── cli.py               # Command-line interface
 ├── data.py              # Data loading utilities
-├── models.py            # Model architectures
+├── models.py            # Model architectures (Set Transformer + ResidualBlock)
 ├── training.py          # Training functions
-├── optimization.py      # Hyperparameter search
+├── optimization.py      # Hyperparameter search with cross-validation
 ├── evaluation.py        # Metrics and evaluation
 ├── visualization.py     # Plotting functions
 └── utils.py            # Helper utilities
 ```
 
+### Contributing
+
+We welcome contributions!
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-We welcome contributions!
 
 ## 🐛 Issues
 

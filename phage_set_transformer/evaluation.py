@@ -211,7 +211,8 @@ def load_model(model_path: str, device: Optional[torch.device] = None) -> Tuple[
         classifier_hidden_dim=model_config.get('classifier_hidden_dim', 512),
         activation_function=model_config.get('activation_function', 'gelu'),
         chunk_size=model_config.get('chunk_size', 128),
-        normalization_type=model_config.get('normalization_type', 'none')
+        normalization_type=model_config.get('normalization_type', 'none'),
+        use_residual_classifier=model_config.get('use_residual_classifier', False)
     )
     
     # Load state dict

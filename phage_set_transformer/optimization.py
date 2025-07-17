@@ -307,6 +307,10 @@ def _retrain_best_params(
     all_metrics = []
     models = []
 
+    # CREATE THE NECESSARY DIRECTORIES
+    final_models_dir = base_dir / "final_models"
+    final_models_dir.mkdir(parents=True, exist_ok=True)
+
     from .utils import get_device
     device = get_device()
 
@@ -348,13 +352,17 @@ def _retrain_best_params(
             metrics_dir=str(base_dir / "training_metrics"),
         )
 
+        # CREATE THE SEED-SPECIFIC EVALUATION DIRECTORY
+        seed_eval_dir = final_models_dir / f"seed_{seed}_evaluation"
+        seed_eval_dir.mkdir(parents=True, exist_ok=True)
+
         metrics = evaluate_full(
             model, 
             test_loader, 
             device, 
             best_params["use_phage_weights"],
             return_attention=True,
-            output_dir=str(base_dir / "final_models" / f"seed_{seed}_evaluation"))
+            output_dir=str(seed_eval_dir))  # Use the created directory
         all_metrics.append(metrics)
         models.append(model)
 
@@ -385,7 +393,7 @@ def _retrain_best_params(
             metrics=metrics,
             best_params=best_params,
         )
-        torch.save(torch_save, base_dir / "final_models" / f"model_seed_{seed}.pt")
+        torch.save(torch_save, final_models_dir / f"model_seed_{seed}.pt")
 
     mccs = [m["mcc"] for m in all_metrics]
     summary = dict(

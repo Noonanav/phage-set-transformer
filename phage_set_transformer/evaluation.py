@@ -121,6 +121,9 @@ def evaluate_full(model: nn.Module,
 
     # Save outputs if directory provided
     if output_dir:
+        # CREATE THE OUTPUT DIRECTORY IF IT DOESN'T EXIST
+        os.makedirs(output_dir, exist_ok=True)
+        
         # Save predictions
         predictions_df = pd.DataFrame({
             'strain': all_strains,

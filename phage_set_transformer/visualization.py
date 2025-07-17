@@ -88,7 +88,7 @@ def plot_confusion_matrix(conf_matrix: np.ndarray,
     plots_dir = os.path.join(output_dir, "plots")
     os.makedirs(plots_dir, exist_ok=True)
     
-    plt.figure(figsize=(8, 7))
+    plt.figure(figsize=(6, 6))
     sns.heatmap(conf_matrix, annot=True, fmt="d", cmap="Blues", cbar=False,
                 xticklabels=['Predicted Negative', 'Predicted Positive'],
                 yticklabels=['Actual Negative', 'Actual Positive'])
@@ -129,7 +129,7 @@ def plot_roc_curve(all_labels: np.ndarray,
     fpr, tpr, _ = roc_curve(all_labels, all_preds)
     roc_auc = auc(fpr, tpr)
 
-    plt.figure(figsize=(8, 7))
+    plt.figure(figsize=(6, 6))
     plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.3f})')
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
     plt.xlim([0.0, 1.0])
@@ -171,7 +171,7 @@ def plot_pr_curve(all_labels: np.ndarray,
     precision_curve, recall_curve, _ = precision_recall_curve(all_labels, all_preds)
     pr_auc = auc(recall_curve, precision_curve)
 
-    plt.figure(figsize=(8, 7))
+    plt.figure(figsize=(6, 6))
     plt.plot(recall_curve, precision_curve, color='darkorange', lw=2,
              label=f'PR curve (area = {pr_auc:.3f})')
     plt.xlim([0.0, 1.0])

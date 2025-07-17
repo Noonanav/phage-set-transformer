@@ -316,6 +316,7 @@ def train_model_with_params(interactions_path: str,
                            classifier_hidden_dim: int = 512,
                            activation_function: str = "gelu",
                            chunk_size: int = 128,
+                           normalization_type: str = "none",
                            # Training parameters
                            num_epochs: int = 100,
                            learning_rate: float = 1e-4,
@@ -450,7 +451,8 @@ def train_model_with_params(interactions_path: str,
         classifier_hidden_layers=classifier_hidden_layers,
         classifier_hidden_dim=classifier_hidden_dim,
         activation_function=activation_function,
-        chunk_size=chunk_size
+        chunk_size=chunk_size,
+        normalization_type=normalization_type 
     ).to(device)
     
     # Initialize attention weights
@@ -481,6 +483,7 @@ def train_model_with_params(interactions_path: str,
             'classifier_hidden_dim': classifier_hidden_dim,
             'activation_function': activation_function,
             'chunk_size': chunk_size,
+            'normalization_type': normalization_type,
         },
         'training': {
             'num_epochs': num_epochs,

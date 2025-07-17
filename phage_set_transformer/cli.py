@@ -60,6 +60,7 @@ def _cmd_train(args):
         batch_size=args.batch_size,
         patience=args.patience,
         random_state=args.seed,
+        normalization_type=args.normalization,
         # any extra kwargs you expose can be passed through here
     )
     print("Training finished; artefacts saved to", results["output_dir"])
@@ -112,6 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--batch-size", type=int, default=64)
     t.add_argument("--patience", type=int, default=10, help="Early-stopping patience")
     t.add_argument("--seed", type=int, default=42)
+    t.add_argument("--normalization", choices=["none", "layer_norm", "l2_norm"], default="none", help="Input normalization type") 
     t.set_defaults(func=_cmd_train)
 
     # predict ----------------------------------------------------------

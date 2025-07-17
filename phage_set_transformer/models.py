@@ -187,27 +187,29 @@ class FlexibleStrainPhageTransformer(nn.Module):
     """
     
     def __init__(self,
-                 embedding_dim: int = 384,
-                 hidden_dim: int = 512,
-                 num_heads: int = 8,
-                 strain_inds: int = 256,
-                 phage_inds: int = 256,
-                 num_isab_layers: int = 2,
-                 num_seeds: int = 1,
-                 dropout: float = 0.1,
-                 ln: bool = True,
-                 temperature: float = 0.1,
-                 use_cross_attention: bool = True,
-                 classifier_hidden_layers: int = 1,
-                 classifier_hidden_dim: Optional[int] = 512,
-                 activation_function: str = "gelu",
-                 chunk_size: int = 128):
+                embedding_dim: int = 384,
+                hidden_dim: int = 512,
+                num_heads: int = 8,
+                strain_inds: int = 256,
+                phage_inds: int = 256,
+                num_isab_layers: int = 2,
+                num_seeds: int = 1,
+                dropout: float = 0.1,
+                ln: bool = True,
+                temperature: float = 0.1,
+                use_cross_attention: bool = True,
+                classifier_hidden_layers: int = 1,
+                classifier_hidden_dim: Optional[int] = 512,
+                activation_function: str = "gelu",
+                chunk_size: int = 128,
+                normalization_type: str = "none"):  # ADD THIS LINE
         super().__init__()
 
         # Save parameters
         self.temperature = temperature
         self.use_cross_attention = use_cross_attention
         self.chunk_size = chunk_size
+        self.normalization_type = normalization_type
 
         # Set hidden dim for classifier
         if classifier_hidden_dim is None:
@@ -222,6 +224,12 @@ class FlexibleStrainPhageTransformer(nn.Module):
             self.activation = nn.SiLU()
         else:
             self.activation = nn.GELU()
+        
+        # Input normalization
+        if normalization_type == "layer_norm":
+            self.input_norm = nn.LayerNorm(embedding_dim)
+        else:
+            self.input_norm = None
 
         # Dimension expansion layers for 384-dim to hidden_dim
         self.strain_expand = nn.Linear(embedding_dim, hidden_dim) if embedding_dim != hidden_dim else nn.Identity()
@@ -299,6 +307,14 @@ class FlexibleStrainPhageTransformer(nn.Module):
             logits: [B, 1]
             attention_weights: Optional tuple of (strain_attn, phage_attn) if return_attn=True
         """
+        # Normalize inputs if specified
+        if self.normalization_type == "layer_norm":
+            strain_genes = self.input_norm(strain_genes)
+            phage_genes = self.input_norm(phage_genes)
+        elif self.normalization_type == "l2_norm":
+            strain_genes = F.normalize(strain_genes, p=2, dim=-1)
+            phage_genes = F.normalize(phage_genes, p=2, dim=-1)
+            
         # Optional dimension expansion
         strain_genes = self.strain_expand(strain_genes)
         phage_genes = self.phage_expand(phage_genes)

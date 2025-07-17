@@ -53,6 +53,7 @@ def _suggest_params(trial: optuna.Trial) -> Dict[str, Any]:
         num_isab_layers=trial.suggest_int("num_isab_layers", 1, 3),
         ln=trial.suggest_categorical("ln", [True, False]),
         num_seeds=trial.suggest_categorical("num_seeds", [1, 2, 4]),
+        normalization_type=trial.suggest_categorical("normalization_type", ["none", "layer_norm", "l2_norm"]),
         # classifier
         dropout=trial.suggest_float("dropout", 0.0, 0.3),
         classifier_hidden_layers=trial.suggest_int("classifier_hidden_layers", 1, 3),
@@ -127,6 +128,7 @@ def _cv_objective(
             use_cross_attention=params["use_cross_attention"],
             classifier_hidden_layers=params["classifier_hidden_layers"],
             activation_function=params["activation_function"],
+            normalization_type=params["normalization_type"],
         )
         model = init_attention_weights(model)
 
@@ -381,7 +383,8 @@ def _retrain_best_params(
             'classifier_hidden_layers': best_params['classifier_hidden_layers'],
             'classifier_hidden_dim': 512,  # Add the default used
             'activation_function': best_params['activation_function'],
-            'chunk_size': 128,  # Add the default used
+            'chunk_size': 128,   # Add the default used
+            'normalization_type': best_params['normalization_type'],
         }
 
         # persist each seed model
@@ -434,4 +437,5 @@ def _model_kw() -> set:
         "use_cross_attention",
         "classifier_hidden_layers",
         "activation_function",
+        "normalization_type",
     }

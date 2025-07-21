@@ -17,6 +17,7 @@ import json as _json
 import logging
 import os
 from pathlib import Path
+import yaml
 from typing import Dict, Any, List, Optional, Tuple
 
 import numpy as np
@@ -41,37 +42,51 @@ _log = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------#
 # Hyper-parameter search space
 # -----------------------------------------------------------------------------#
-def _suggest_params(trial: optuna.Trial) -> Dict[str, Any]:
+def _suggest_params(trial: optuna.Trial, config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Return one sampled hyper-parameter set."""
-    return dict(
-        # architecture
-        use_cross_attention=trial.suggest_categorical("use_cross_attention", [True, False]),
-        num_heads=trial.suggest_categorical("num_heads", [2, 4, 8]),
-        temperature=trial.suggest_float("temperature", 0.01, 1.0, log=True),
-        strain_inds=trial.suggest_categorical("strain_inds", [64, 128, 192, 256]),
-        phage_inds=trial.suggest_categorical("phage_inds", [32, 64, 96, 128]),
-        num_isab_layers=trial.suggest_int("num_isab_layers", 1, 3),
-        ln=trial.suggest_categorical("ln", [True, False]),
-        num_seeds=trial.suggest_categorical("num_seeds", [1, 2, 4]),
-        normalization_type=trial.suggest_categorical("normalization_type", ["none", "layer_norm", "l2_norm"]),
-        use_residual_classifier=trial.suggest_categorical("use_residual_classifier", [False, True]),
-        # classifier
-        dropout=trial.suggest_float("dropout", 0.0, 0.3),
-        classifier_hidden_layers=trial.suggest_int("classifier_hidden_layers", 2, 6),
-        activation_function=trial.suggest_categorical("activation_function", ["relu", "gelu", "silu"]),
-        # training
-        learning_rate=trial.suggest_float("learning_rate", 1e-5, 5e-4, log=True),
-        batch_size=trial.suggest_categorical("batch_size", [32, 64, 128]),
-        use_phage_weights=trial.suggest_categorical("use_phage_weights", [True, False]),
-        weight_decay=trial.suggest_float("weight_decay", 0.0, 0.1),
-        # scheduler
-        scheduler_type=trial.suggest_categorical(
-            "scheduler_type",
-            ["one_cycle", "cosine_annealing", "reduce_on_plateau", "linear_warmup_decay", "none"],
-        ),
-        warmup_ratio=trial.suggest_float("warmup_ratio", 0.0, 0.2),
-    )
-
+    if config is None:
+        # Original hardcoded defaults - exactly as before
+        return dict(
+            # architecture
+            use_cross_attention=trial.suggest_categorical("use_cross_attention", [True, False]),
+            num_heads=trial.suggest_categorical("num_heads", [2, 4, 8]),
+            temperature=trial.suggest_float("temperature", 0.01, 1.0, log=True),
+            strain_inds=trial.suggest_categorical("strain_inds", [64, 128, 192, 256]),
+            phage_inds=trial.suggest_categorical("phage_inds", [32, 64, 96, 128]),
+            num_isab_layers=trial.suggest_int("num_isab_layers", 1, 3),
+            ln=trial.suggest_categorical("ln", [True, False]),
+            num_seeds=trial.suggest_categorical("num_seeds", [1, 2, 4]),
+            normalization_type=trial.suggest_categorical("normalization_type", ["none", "layer_norm", "l2_norm"]),
+            use_residual_classifier=trial.suggest_categorical("use_residual_classifier", [False, True]),
+            # classifier
+            dropout=trial.suggest_float("dropout", 0.0, 0.3),
+            classifier_hidden_layers=trial.suggest_int("classifier_hidden_layers", 2, 6),
+            activation_function=trial.suggest_categorical("activation_function", ["relu", "gelu", "silu"]),
+            # training
+            learning_rate=trial.suggest_float("learning_rate", 1e-5, 5e-4, log=True),
+            batch_size=trial.suggest_categorical("batch_size", [32, 64, 128]),
+            use_phage_weights=trial.suggest_categorical("use_phage_weights", [True, False]),
+            weight_decay=trial.suggest_float("weight_decay", 0.0, 0.1),
+            # scheduler
+            scheduler_type=trial.suggest_categorical(
+                "scheduler_type",
+                ["one_cycle", "cosine_annealing", "reduce_on_plateau", "linear_warmup_decay", "none"],
+            ),
+            warmup_ratio=trial.suggest_float("warmup_ratio", 0.0, 0.2),
+        )
+    
+    # Use config if provided
+    params = {}
+    for param_name, param_config in config.items():
+        if param_config["type"] == "categorical":
+            params[param_name] = trial.suggest_categorical(param_name, param_config["choices"])
+        elif param_config["type"] == "float":
+            log_scale = param_config.get("log", False)
+            params[param_name] = trial.suggest_float(param_name, param_config["low"], param_config["high"], log=log_scale)
+        elif param_config["type"] == "int":
+            params[param_name] = trial.suggest_int(param_name, param_config["low"], param_config["high"])
+    
+    return params
 
 # -----------------------------------------------------------------------------#
 # CV objective
@@ -85,9 +100,10 @@ def _cv_objective(
     n_folds: int,
     random_state: int,
     base_trial_dir: Path,
+    search_config: Optional[Dict[str, Any]] = None,
 ) -> float:
     """Return **median MCC** across *n_folds* folds (prunable)."""
-    params = _suggest_params(trial)
+    params = _suggest_params(trial, search_config) 
     fold_mcc: List[float] = []
 
     from .utils import get_device
@@ -179,6 +195,7 @@ def run_cv_optimization(
     study_name: Optional[str] = None,
     output_dir: Optional[str] = None,
     log_level: str = "INFO",
+    search_config_path: Optional[str] = None,
 ) -> Tuple[optuna.Study, Dict[str, Any]]:
     """
     Run an Optuna hyper-parameter search **with k-fold CV per trial** and then
@@ -188,6 +205,13 @@ def run_cv_optimization(
     Set *final_seeds=0* if you do **not** want the multi-seed retrain step.
     """
     setup_logging(level=log_level)
+
+    # Load config if provided
+    search_config = None
+    if search_config_path:
+        with open(search_config_path, 'r') as f:
+            search_config = yaml.safe_load(f)
+        _log.info(f"Loaded search configuration from {search_config_path}")
 
     # ---------------------------------------------------------------- data
     interactions = pd.read_csv(interactions_path)
@@ -246,6 +270,7 @@ def run_cv_optimization(
             n_folds=n_folds,
             random_state=random_state,
             base_trial_dir=trial_dir,
+            search_config=search_config,
         ),
         n_trials=trials_to_run,
         show_progress_bar=True,

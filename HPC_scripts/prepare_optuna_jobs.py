@@ -31,6 +31,7 @@ CONFIG = dict(
     trial_total=200,
     folds=5,
     final_seeds=0,
+    search_config=None,
     # ---------- Slurm resources ----------
     account="ac_mak",               # e.g. "es1" or "lr5"
     partition="es1",            # or lr5, lr_bigmem, gpu
@@ -82,7 +83,7 @@ python -m phage_set_transformer.cli optimize \\
     --final-seeds {final_seeds} \\
     --output {out_dir} \\
     --study-name pst_lr_{timestamp} \\
-    --seed $(( {seed_base} + $TRIAL_ID ))
+    --seed $(( {seed_base} + $TRIAL_ID )){maybe_search_config}
 
 echo "Finished at $(date)"
 """
@@ -92,6 +93,11 @@ def make_dir(p: Path) -> Path:
     return p
 
 def render_slurm(idx: int, cfg: dict, array: bool) -> str:
+    # Conditional search config line
+    maybe_search_config = ""
+    if cfg["search_config"]:
+        maybe_search_config = f" \\\n    --search-config {cfg['search_config']}"
+    
     return TEMPLATE.format(
         job_id=idx,
         account=cfg["account"],
@@ -105,7 +111,7 @@ def render_slurm(idx: int, cfg: dict, array: bool) -> str:
         maybe_gres=f"\n#SBATCH --gres={cfg['gres']}" if cfg["gres"] else "",
         out_dir=cfg["output_dir"],
         array_directive="" if not array else f"#SBATCH --array=0-{cfg['trial_total']-1}%50",
-        conda_env=cfg["conda_env"],              # ← added
+        conda_env=cfg["conda_env"],
         interactions=cfg["interactions"],
         strain_emb=cfg["strain_emb"],
         phage_emb=cfg["phage_emb"],
@@ -113,6 +119,7 @@ def render_slurm(idx: int, cfg: dict, array: bool) -> str:
         final_seeds=cfg["final_seeds"],
         timestamp=cfg["timestamp"],
         seed_base=cfg["seed_base"],
+        maybe_search_config=maybe_search_config,
     )
 
 def create_optuna_study(output_dir: str, study_name: str, random_seed: int = 42):
@@ -188,12 +195,21 @@ def main():
     g = p.add_mutually_exclusive_group(required=True)
     g.add_argument("--array", action="store_true", help="Write array job + retraining job")
     g.add_argument("--split", action="store_true", help="Write individual trial jobs")
+    
+    # Search config argument
+    p.add_argument("--search-config", default=None, 
+                   help="Path to YAML search space configuration file")
+    
     args = p.parse_args()
 
     cfg = CONFIG.copy()
     cfg["timestamp"] = datetime.now().strftime("%Y%m%d_%H%M%S")
     cfg["seed_base"] = 42
     cfg["output_dir"] = str(make_dir(Path(cfg["output_dir"]) / cfg["timestamp"]))
+
+    # Override search config from command line
+    if args.search_config:
+        cfg["search_config"] = args.search_config
 
     # Force final_seeds=0 for optimization jobs
     cfg["final_seeds"] = 0

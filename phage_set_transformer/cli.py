@@ -36,11 +36,12 @@ def _cmd_optimize(args):
         strain_embeddings_path=args.strain_embeddings,
         phage_embeddings_path=args.phage_embeddings,
         n_trials=args.trials,
-        n_folds=args.folds,                    # ADD THIS LINE
-        final_seeds=args.final_seeds,          # ADD THIS LINE
+        n_folds=args.folds,
+        final_seeds=args.final_seeds,
         random_state=args.seed,
         study_name=args.study_name,
         output_dir=getattr(args, 'output', None),
+        search_config_path=getattr(args, 'search_config', None),
     )
     print(f"Best MCC = {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
@@ -103,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--seed", type=int, default=42, help="Random seed")
     o.add_argument("--folds", type=int, default=5, help="Number of CV folds")
     o.add_argument("--final-seeds", type=int, default=5, help="Number of seeds for final training")
+    o.add_argument("--search-config", default=None, help="Path to YAML search space config") 
     o.set_defaults(func=_cmd_optimize)
 
     # train ------------------------------------------------------------

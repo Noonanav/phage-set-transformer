@@ -50,6 +50,15 @@ pst optimize \
     --trials 50 \
     --output results/
 
+# Optimize with custom search space (for different dataset sizes)
+pst optimize \
+    --interactions data/interactions.csv \
+    --strain-embeddings data/embeddings/strains/ \
+    --phage-embeddings data/embeddings/phages/ \
+    --search-config configs/small_dataset.yaml \
+    --trials 50 \
+    --output results/
+
 # Train a model with specific parameters and advanced features
 pst train \
     --interactions data/interactions.csv \
@@ -117,6 +126,7 @@ pst optimize [OPTIONS]
 - `--output, -o`: Output directory (default: timestamped directory)
 - `--study-name`: Optuna study name for resumability
 - `--seed`: Random seed for reproducibility (default: 42)
+- `--search-config`: Path to YAML file defining custom hyperparameter search space
 
 ### Training Command
 
@@ -212,6 +222,38 @@ high_confidence = positive_predictions[positive_predictions['interaction_probabi
 print(f"High-confidence phage therapy candidates: {len(high_confidence)}")
 ```
 
+## 🔧 Custom Search Spaces
+
+For different dataset sizes or specific research needs, you can customize the hyperparameter search space. The default search space parameters are shown in the [default_params.yaml example](configs/default_params.yaml).
+
+```bash
+# Create a custom config file (default in configs directory)
+# Then use it in optimization
+pst optimize --search-config my_search_config.yaml [other options...]
+```
+
+**Example config file:**
+```yaml
+# my_search_config.yaml - customize parameter ranges
+batch_size:
+  type: categorical
+  choices: [16, 32]        # Smaller batches for small datasets
+
+strain_inds:
+  type: categorical  
+  choices: [64, 128]       # Reduced complexity
+
+learning_rate:
+  type: float
+  low: 0.0001
+  high: 0.001              # Narrower range
+  log: true
+
+use_cross_attention:
+  type: categorical
+  choices: [true]          # Fix to always use cross-attention
+```
+
 ## 🏭 HPC Usage
 
 For large-scale hyperparameter optimization on SLURM clusters:
@@ -245,6 +287,7 @@ CONFIG = dict(
     interactions="~/data/interactions.csv",
     strain_emb="~/data/embeddings/strains",
     phage_emb="~/data/embeddings/phages",
+    search_config="~/configs/my_search.yaml", 
     
     # Resources
     account="your_account",

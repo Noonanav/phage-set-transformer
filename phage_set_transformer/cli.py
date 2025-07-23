@@ -42,6 +42,8 @@ def _cmd_optimize(args):
         study_name=args.study_name,
         output_dir=getattr(args, 'output', None),
         search_config_path=getattr(args, 'search_config', None),
+        cv_epochs=getattr(args, 'cv_epochs', 50),
+        cv_patience=getattr(args, 'cv_patience', 7)
     )
     print(f"Best MCC = {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
@@ -105,6 +107,8 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--folds", type=int, default=5, help="Number of CV folds")
     o.add_argument("--final-seeds", type=int, default=5, help="Number of seeds for final training")
     o.add_argument("--search-config", default=None, help="Path to YAML search space config") 
+    o.add_argument("--cv-epochs", type=int, default=50, help="Epochs for CV optimization (default: 50)")
+    o.add_argument("--cv-patience", type=int, default=7, help="Patience for CV optimization (default: 7)")
     o.set_defaults(func=_cmd_optimize)
 
     # train ------------------------------------------------------------

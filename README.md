@@ -127,6 +127,8 @@ pst optimize [OPTIONS]
 - `--study-name`: Optuna study name for resumability
 - `--seed`: Random seed for reproducibility (default: 42)
 - `--search-config`: Path to YAML file defining custom hyperparameter search space
+- `--cv-epochs`: Epochs for CV optimization (default: 50)
+- `--cv-patience`: Patience for CV optimization (default: 7)
 
 ### Training Command
 
@@ -438,6 +440,12 @@ train_model_with_params(
     scheduler_type='one_cycle',     # Faster convergence
     patience=5                      # Earlier stopping
 )
+```
+
+**Hyperparameter Search Speed:**
+```bash
+# For faster hyperparameter optimization
+pst optimize --cv-epochs 30 --cv-patience 5 [other options...]
 ```
 
 ### Environment Issues

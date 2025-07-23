@@ -101,6 +101,8 @@ def _cv_objective(
     random_state: int,
     base_trial_dir: Path,
     search_config: Optional[Dict[str, Any]] = None,
+    cv_epochs: int = 50,
+    cv_patience: int = 7,
 ) -> float:
     """Return **median MCC** across *n_folds* folds (prunable)."""
     params = _suggest_params(trial, search_config) 
@@ -156,10 +158,10 @@ def _cv_objective(
             model,
             train_loader,
             val_loader,
-            trial=None,                 # internal reporting disabled; we prune here
-            num_epochs=75,
+            trial=None,
+            num_epochs=cv_epochs,
             learning_rate=params["learning_rate"],
-            patience=7,
+            patience=cv_patience, 
             use_phage_weights=params["use_phage_weights"],
             scheduler_type=params["scheduler_type"],
             warmup_ratio=params["warmup_ratio"],
@@ -191,6 +193,8 @@ def run_cv_optimization(
     n_trials: int = 200,
     n_folds: int = 5,
     final_seeds: int = 5,
+    cv_epochs: int = 50,
+    cv_patience: int = 7, 
     random_state: int = 42,
     study_name: Optional[str] = None,
     output_dir: Optional[str] = None,
@@ -271,6 +275,8 @@ def run_cv_optimization(
             random_state=random_state,
             base_trial_dir=trial_dir,
             search_config=search_config,
+            cv_epochs=cv_epochs,
+            cv_patience=cv_patience,
         ),
         n_trials=trials_to_run,
         show_progress_bar=True,

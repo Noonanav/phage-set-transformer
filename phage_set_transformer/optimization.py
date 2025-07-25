@@ -252,7 +252,7 @@ def run_cv_optimization(
             study_name=study_name,
             direction="maximize",
             sampler=TPESampler(seed=random_state),
-            pruner=MedianPruner(n_startup_trials=3),
+            pruner=MedianPruner(n_startup_trials=3, n_warmup_steps=1),
             storage=storage,
         )
         _log.info("Created new study '%s'", study_name)

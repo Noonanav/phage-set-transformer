@@ -13,6 +13,7 @@ This package provides tools for training and optimizing Set Transformer models t
 ### Key Features
 
 - **Set-based Architecture**: Handles variable-length gene sets without padding inefficiencies
+- **Class Imbalance Handling**: Automatic stratified sampling and phage-specific weighting for imbalanced datasets
 - **Advanced Normalization**: Input normalization options (Layer Norm, L2 Norm) for improved training stability
 - **Deep Residual Classifiers**: Residual connections enable training of deeper, more sophisticated interaction predictors
 - **Scalable**: Works with datasets from small lab studies to large-scale microbiome surveys
@@ -402,7 +403,7 @@ models/
 - Use `use_phage_weights=True` to automatically weight rare positive interactions
 - Try `normalization_type='l2_norm'` for consistent embedding scales
 - Monitor both MCC and F1 scores as they handle class imbalance better than accuracy
-- Consider stratified sampling in cross-validation
+- Stratified sampling is applied by default and ensures more consistent training dynamics
 
 **Slow Training**
 - Increase `batch_size` if memory allows

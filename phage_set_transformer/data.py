@@ -268,13 +268,61 @@ def collate_variable_sets_with_weights(batch: List[Tuple]) -> Tuple[torch.Tensor
 
     return strain_padded, phage_padded, strain_mask, phage_mask, label_batch, weight_batch, strain_ids, phage_ids
 
+def stratify_dataframe(df, batch_size, random_state=None):
+    """Reorder DataFrame so positives are distributed evenly across batches."""
+    
+    # Separate positive and negative examples with controlled shuffling
+    pos_df = df[df['interaction'] == 1].sample(frac=1, random_state=random_state).reset_index(drop=True)
+    neg_df = df[df['interaction'] == 0].sample(frac=1, random_state=random_state).reset_index(drop=True)
+    
+    # Handle edge case of no positives
+    if len(pos_df) == 0:
+        return neg_df.sample(frac=1, random_state=random_state).reset_index(drop=True)
+    
+    # Calculate batch distribution parameters
+    total_samples = len(df)
+    n_batches = (total_samples + batch_size - 1) // batch_size
+    pos_per_batch = len(pos_df) // n_batches
+    extra_pos = len(pos_df) % n_batches
+    
+    # Initialize result collection and tracking variables
+    result_rows = []
+    pos_idx = neg_idx = 0
+    rng = np.random.RandomState(random_state) if random_state is not None else np.random
+    
+    # Process each batch sequentially
+    for batch_num in range(n_batches):
+        actual_batch_size = min(batch_size, total_samples - batch_num * batch_size)
+        num_pos = pos_per_batch + (1 if batch_num < extra_pos else 0)
+        num_pos = min(num_pos, actual_batch_size)
+        
+        batch_rows = []
+        
+        # Add positive examples
+        for _ in range(num_pos):
+            if pos_idx < len(pos_df):
+                batch_rows.append(pos_df.iloc[pos_idx].to_dict())
+                pos_idx += 1
+        
+        # Add negative examples
+        for _ in range(actual_batch_size - num_pos):
+            if neg_idx < len(neg_df):
+                batch_rows.append(neg_df.iloc[neg_idx].to_dict())
+                neg_idx += 1
+        
+        # Shuffle within batch and add to results
+        rng.shuffle(batch_rows)
+        result_rows.extend(batch_rows)
+    
+    return pd.DataFrame(result_rows)
 
 def create_data_loaders(train_df: Optional[pd.DataFrame], 
                        test_df: pd.DataFrame, 
                        strain_embeddings: Dict[str, Tuple[np.ndarray, List[str]]], 
                        phage_embeddings: Dict[str, Tuple[np.ndarray, List[str]]],
                        batch_size: int = 16, 
-                       use_phage_weights: bool = True) -> Tuple[Optional[DataLoader], DataLoader]:
+                       use_phage_weights: bool = True,
+                       random_state: Optional[int] = None) -> Tuple[Optional[DataLoader], DataLoader]:
     """
     Create data loaders optimized for single-threaded environment.
     
@@ -296,6 +344,9 @@ def create_data_loaders(train_df: Optional[pd.DataFrame],
     num_workers = 0
 
     if train_df is not None and not train_df.empty:
+        # Apply stratified sampling by reordering DataFrame
+        train_df = stratify_dataframe(train_df, batch_size, random_state)
+
         # Calculate phage-specific weights from training data if enabled
         if use_phage_weights:
             phage_weights = calculate_phage_specific_weights(train_df)
@@ -314,7 +365,7 @@ def create_data_loaders(train_df: Optional[pd.DataFrame],
         train_loader = DataLoader(
             dataset=train_dataset,
             batch_size=batch_size,
-            shuffle=True,
+            shuffle=False,
             num_workers=num_workers,
             pin_memory=True,  # Still useful for GPU data transfer
             collate_fn=collate_variable_sets_with_weights

@@ -25,7 +25,7 @@ import optuna
 import pandas as pd
 from sklearn.model_selection import KFold
 from optuna.samplers import TPESampler
-from optuna.pruners import MedianPruner
+from optuna.pruners import PercentilePruner
 from optuna.storages import RDBStorage
 import torch
 
@@ -129,6 +129,7 @@ def _cv_objective(
             phage_embeddings,
             batch_size=params["batch_size"],
             use_phage_weights=params["use_phage_weights"],
+            random_state=random_state + fold_idx 
         )
 
         # infer embedding dim from first strain vector
@@ -252,7 +253,7 @@ def run_cv_optimization(
             study_name=study_name,
             direction="maximize",
             sampler=TPESampler(seed=random_state),
-            pruner=MedianPruner(n_startup_trials=3, n_warmup_steps=1),
+            pruner=PercentilePruner(percentile=25.0, n_startup_trials=3, n_warmup_steps=1),
             storage=storage,
         )
         _log.info("Created new study '%s'", study_name)
@@ -360,6 +361,7 @@ def _retrain_best_params(
             phage_embeddings,
             batch_size=best_params["batch_size"],
             use_phage_weights=best_params["use_phage_weights"],
+            random_state=seed 
         )
 
         emb_dim = next(iter(strain_embeddings.values()))[0].shape[1]

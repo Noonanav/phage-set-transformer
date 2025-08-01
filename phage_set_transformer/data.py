@@ -116,29 +116,79 @@ def load_embeddings_flexible(embedding_dir: str,
 def filter_interactions_by_strain(interactions_df: pd.DataFrame, 
                                 random_state: int = 42) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Split interactions into train/test by strain.
+    Split interactions into train/test by strain with class balance optimization.
+    
+    Maintains strain stratification (no strain leakage between splits) while 
+    attempting to maximize class balance by trying multiple random splits and
+    selecting the one with the best distribution of positive examples.
     
     Args:
         interactions_df: DataFrame with columns 'strain', 'phage', 'interaction'
         random_state: Random seed for reproducibility
         
     Returns:
-        Tuple of (train_df, test_df)
+        Tuple of (train_df, test_df) with strain stratification and optimized balance
+        
+    Notes:
+        - Ensures no strain appears in both train and test sets
+        - Attempts up to 100 random splits to find optimal class balance
+        - Logs final split statistics and warns if severely imbalanced
+        - Falls back to simple random split if no improvement found
     """
     unique_strains = interactions_df['strain'].unique()
-    train_strains, test_strains = train_test_split(
-        unique_strains,
-        test_size=0.2,
-        random_state=random_state
-    )
-
-    train_df = interactions_df[interactions_df['strain'].isin(train_strains)]
-    test_df = interactions_df[interactions_df['strain'].isin(test_strains)]
-
-    logger.info(f"Train set: {len(train_df)} interactions, {len(train_strains)} strains")
-    logger.info(f"Test set:  {len(test_df)} interactions, {len(test_strains)} strains")
     
-    return train_df, test_df
+    # Try multiple times to get balanced split
+    best_train_df, best_test_df = None, None
+    best_min_pos = 0
+    
+    for attempt in range(100):  # Try 100 different random splits
+        train_strains, test_strains = train_test_split(
+            unique_strains, 
+            test_size=0.2, 
+            random_state=random_state + attempt
+        )
+        
+        train_df = interactions_df[interactions_df['strain'].isin(train_strains)]
+        test_df = interactions_df[interactions_df['strain'].isin(test_strains)]
+        
+        train_pos = train_df['interaction'].sum()
+        test_pos = test_df['interaction'].sum()
+        
+        # Keep track of split with best minimum positive count
+        min_pos = min(train_pos, test_pos)
+        if min_pos > best_min_pos:
+            best_min_pos = min_pos
+            best_train_df = train_df
+            best_test_df = test_df
+            
+            # If we have decent balance, stop early
+            if min_pos >= 10:  # At least 10 positive examples in each
+                break
+    
+    # Use best split found (or fallback to original if no attempts made)
+    if best_train_df is None:
+        train_strains, test_strains = train_test_split(
+            unique_strains, test_size=0.2, random_state=random_state
+        )
+        best_train_df = interactions_df[interactions_df['strain'].isin(train_strains)]
+        best_test_df = interactions_df[interactions_df['strain'].isin(test_strains)]
+    
+    # Log results (matching existing style)
+    train_pos = best_train_df['interaction'].sum()
+    test_pos = best_test_df['interaction'].sum()
+    
+    logger.info(f"Train set: {len(best_train_df)} interactions, {len(set(best_train_df['strain']))} strains")
+    logger.info(f"Test set:  {len(best_test_df)} interactions, {len(set(best_test_df['strain']))} strains")
+    logger.info(f"Train positive: {train_pos}/{len(best_train_df)} ({train_pos/len(best_train_df):.3f})")
+    logger.info(f"Test positive:  {test_pos}/{len(best_test_df)} ({test_pos/len(best_test_df):.3f})")
+    
+    # Warn if severely imbalanced
+    if train_pos < 5:
+        logger.warning(f"Train set has only {train_pos} positive examples!")
+    if test_pos < 5:
+        logger.warning(f"Test set has only {test_pos} positive examples!")
+    
+    return best_train_df, best_test_df
 
 
 def calculate_phage_specific_weights(train_df: pd.DataFrame) -> Dict[str, float]:

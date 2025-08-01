@@ -447,16 +447,64 @@ def _retrain_best_params(
 
 
 def _split_by_strain(df: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """80/20 split stratified by strain id."""
+    """
+    80/20 split stratified by strain id with class balance optimization.
+    
+    Tries multiple random strain splits to find one that maximizes the minimum
+    number of positive examples in both train and test sets, while maintaining
+    strain stratification (no strain appears in both splits).
+    
+    Args:
+        df: DataFrame with columns 'strain', 'phage', 'interaction'
+        seed: Base random seed for reproducibility
+        
+    Returns:
+        Tuple of (train_df, test_df) with optimized class balance
+    """
     strains = df["strain"].unique()
-    rng = np.random.RandomState(seed)
-    rng.shuffle(strains)
+    
+    # Try multiple random seeds to find balanced split
+    best_train_df, best_test_df = None, None
+    best_min_pos = 0
+    
+    for attempt in range(50):  # Fewer attempts since this runs many times in optimization
+        rng = np.random.RandomState(seed + attempt)
+        shuffled_strains = strains.copy()
+        rng.shuffle(shuffled_strains)
 
-    cut = int(0.8 * len(strains))
-    train_strains = strains[:cut]
-    train_df = df[df["strain"].isin(train_strains)]
-    test_df = df[~df["strain"].isin(train_strains)]
-    return train_df, test_df
+        cut = int(0.8 * len(shuffled_strains))
+        train_strains = shuffled_strains[:cut]
+        test_strains = shuffled_strains[cut:]
+        
+        train_df = df[df["strain"].isin(train_strains)]
+        test_df = df[df["strain"].isin(test_strains)]
+        
+        train_pos = train_df['interaction'].sum()
+        test_pos = test_df['interaction'].sum()
+        
+        # Keep track of split with best minimum positive count
+        min_pos = min(train_pos, test_pos)
+        if min_pos > best_min_pos:
+            best_min_pos = min_pos
+            best_train_df = train_df
+            best_test_df = test_df
+            
+            # If we have decent balance, stop early
+            if min_pos >= 5:  # Lower threshold for optimization runs
+                break
+    
+    # Fallback to original approach if no good split found
+    if best_train_df is None:
+        rng = np.random.RandomState(seed)
+        shuffled_strains = strains.copy()
+        rng.shuffle(shuffled_strains)
+        
+        cut = int(0.8 * len(shuffled_strains))
+        train_strains = shuffled_strains[:cut]
+        best_train_df = df[df["strain"].isin(train_strains)]
+        best_test_df = df[~df["strain"].isin(train_strains)]
+    
+    return best_train_df, best_test_df
 
 
 def _model_kw() -> set:

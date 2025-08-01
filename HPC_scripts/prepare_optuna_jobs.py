@@ -128,14 +128,14 @@ def create_optuna_study(output_dir: str, study_name: str, random_seed: int = 42)
         import optuna
         from optuna.storages import RDBStorage
         from optuna.samplers import TPESampler
-        from optuna.pruners import MedianPruner
+        from optuna.pruners import PercentilePruner
         
         storage = RDBStorage(url=f"sqlite:///{output_dir}/study.db")
         study = optuna.create_study(
             study_name=study_name,
             direction="maximize",
             sampler=TPESampler(seed=random_seed),
-            pruner=MedianPruner(n_startup_trials=3),
+            pruner=PercentilePruner(percentile=25.0, n_startup_trials=3, n_warmup_steps=1),
             storage=storage,
             load_if_exists=True  # Won't error if already exists
         )

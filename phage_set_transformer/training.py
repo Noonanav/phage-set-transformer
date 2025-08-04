@@ -329,6 +329,7 @@ def train_model_with_params(interactions_path: str,
                            warmup_ratio: float = 0.1,
                            random_state: int = 42,
                            return_attention: bool = True,
+                           val_batch_size: Optional[int] = None,
                            log_level: str = "INFO") -> Dict[str, Any]:
     """
     Train a model with fixed hyperparameters.
@@ -426,8 +427,13 @@ def train_model_with_params(interactions_path: str,
     
     # Create data loaders
     train_loader, test_loader = create_data_loaders(
-        train_df, test_df, strain_embeddings, phage_embeddings,
-        batch_size=batch_size, use_phage_weights=use_phage_weights
+        train_df, 
+        test_df, 
+        strain_embeddings, 
+        phage_embeddings,
+        batch_size=batch_size, 
+        val_batch_size=val_batch_size,
+        use_phage_weights=use_phage_weights
     )
     
     # Get embedding dimension if not specified
@@ -492,6 +498,7 @@ def train_model_with_params(interactions_path: str,
             'num_epochs': num_epochs,
             'learning_rate': learning_rate,
             'batch_size': batch_size,
+            'val_batch_size': val_batch_size,
             'patience': patience,
             'use_phage_weights': use_phage_weights,
             'weight_decay': weight_decay,

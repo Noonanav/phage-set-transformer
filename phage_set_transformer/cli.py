@@ -43,7 +43,8 @@ def _cmd_optimize(args):
         output_dir=getattr(args, 'output', None),
         search_config_path=getattr(args, 'search_config', None),
         cv_epochs=getattr(args, 'cv_epochs', 50),
-        cv_patience=getattr(args, 'cv_patience', 7)
+        cv_patience=getattr(args, 'cv_patience', 7),
+        val_batch_size=getattr(args, 'val_batch_size', None),
     )
     print(f"Best MCC = {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
@@ -65,6 +66,7 @@ def _cmd_train(args):
         random_state=args.seed,
         normalization_type=args.normalization,
         use_residual_classifier=args.residual_classifier,
+        val_batch_size=getattr(args, 'val_batch_size', None),
         # any extra kwargs you expose can be passed through here
     )
     print("Training finished; artefacts saved to", results["output_dir"])
@@ -109,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--search-config", default=None, help="Path to YAML search space config") 
     o.add_argument("--cv-epochs", type=int, default=50, help="Epochs for CV optimization (default: 50)")
     o.add_argument("--cv-patience", type=int, default=7, help="Patience for CV optimization (default: 7)")
+    o.add_argument("--val-batch-size", type=int, default=None, help="Validation batch size (if None, uses same as training)")
     o.set_defaults(func=_cmd_optimize)
 
     # train ------------------------------------------------------------
@@ -122,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--seed", type=int, default=42)
     t.add_argument("--normalization", choices=["none", "layer_norm", "l2_norm"], default="none", help="Input normalization type") 
     t.add_argument("--residual-classifier", action="store_true", help="Use residual connections in classifier")
+    t.add_argument("--val-batch-size", type=int, default=None, help="Validation batch size (if None, uses same as training)")
     t.set_defaults(func=_cmd_train)
 
     # predict ----------------------------------------------------------

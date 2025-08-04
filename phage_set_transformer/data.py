@@ -372,7 +372,8 @@ def create_data_loaders(train_df: Optional[pd.DataFrame],
                        phage_embeddings: Dict[str, Tuple[np.ndarray, List[str]]],
                        batch_size: int = 16, 
                        use_phage_weights: bool = True,
-                       random_state: Optional[int] = None) -> Tuple[Optional[DataLoader], DataLoader]:
+                       random_state: Optional[int] = None,
+                       val_batch_size: Optional[int] = None) -> Tuple[Optional[DataLoader], DataLoader]:
     """
     Create data loaders optimized for single-threaded environment.
     
@@ -381,12 +382,20 @@ def create_data_loaders(train_df: Optional[pd.DataFrame],
         test_df: Test DataFrame
         strain_embeddings: Dictionary of strain embeddings
         phage_embeddings: Dictionary of phage embeddings
-        batch_size: Batch size for data loaders
+        batch_size: Batch size for training data loader
+        val_batch_size: Batch size for validation data loader (if None, uses batch_size * 4)
         use_phage_weights: Whether to use phage-specific weights
+        random_state: Random seed for stratified sampling
         
     Returns:
         Tuple of (train_loader, test_loader)
     """
+    # Set validation batch size (default to same as training)
+    if val_batch_size is None:
+        val_batch_size = batch_size * 2
+        if val_batch_size > batch_size:
+            logger.info(f"Using larger validation batches ({val_batch_size}) for more stable metrics")
+    
     train_loader = None
     phage_weights = {}
 
@@ -414,10 +423,10 @@ def create_data_loaders(train_df: Optional[pd.DataFrame],
         # Create data loader with custom collate function, no multiprocessing
         train_loader = DataLoader(
             dataset=train_dataset,
-            batch_size=batch_size,
+            batch_size=batch_size,  # Use training batch size
             shuffle=False,
             num_workers=num_workers,
-            pin_memory=True,  # Still useful for GPU data transfer
+            pin_memory=True,
             collate_fn=collate_variable_sets_with_weights
         )
 
@@ -426,14 +435,16 @@ def create_data_loaders(train_df: Optional[pd.DataFrame],
         test_df, strain_embeddings, phage_embeddings, phage_weights
     )
 
-    # Create test data loader, no multiprocessing
+    # Create test data loader with larger batch size
     test_loader = DataLoader(
         dataset=test_dataset,
-        batch_size=batch_size,
+        batch_size=val_batch_size,  # Use validation batch size
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
         collate_fn=collate_variable_sets_with_weights
     )
 
+    logger.info(f"Created data loaders - Train batch size: {batch_size}, Val batch size: {val_batch_size}")
+    
     return train_loader, test_loader

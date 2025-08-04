@@ -103,6 +103,7 @@ def _cv_objective(
     search_config: Optional[Dict[str, Any]] = None,
     cv_epochs: int = 50,
     cv_patience: int = 7,
+    val_batch_size: Optional[int] = None,
 ) -> float:
     """Return **median MCC** across *n_folds* folds (prunable)."""
     params = _suggest_params(trial, search_config) 
@@ -128,6 +129,7 @@ def _cv_objective(
             strain_embeddings,
             phage_embeddings,
             batch_size=params["batch_size"],
+            val_batch_size=val_batch_size, 
             use_phage_weights=params["use_phage_weights"],
             random_state=random_state + fold_idx 
         )
@@ -201,6 +203,7 @@ def run_cv_optimization(
     output_dir: Optional[str] = None,
     log_level: str = "INFO",
     search_config_path: Optional[str] = None,
+    val_batch_size: Optional[int] = None,
 ) -> Tuple[optuna.Study, Dict[str, Any]]:
     """
     Run an Optuna hyper-parameter search **with k-fold CV per trial** and then
@@ -278,6 +281,7 @@ def run_cv_optimization(
             search_config=search_config,
             cv_epochs=cv_epochs,
             cv_patience=cv_patience,
+            val_batch_size=val_batch_size,
         ),
         n_trials=trials_to_run,
         show_progress_bar=True,
@@ -299,6 +303,7 @@ def run_cv_optimization(
             n_runs=final_seeds,
             base_dir=base_dir,
             random_state=random_state,
+            val_batch_size=val_batch_size,
         )
         _log.info("Final retraining completed")
     else:
@@ -332,6 +337,7 @@ def _retrain_best_params(
     n_runs: int,
     base_dir: Path,
     random_state: int,
+    val_batch_size: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     Retrain best hyper-parameter set `n_runs` times with different seeds,
@@ -360,6 +366,7 @@ def _retrain_best_params(
             strain_embeddings,
             phage_embeddings,
             batch_size=best_params["batch_size"],
+            val_batch_size=val_batch_size, 
             use_phage_weights=best_params["use_phage_weights"],
             random_state=seed 
         )

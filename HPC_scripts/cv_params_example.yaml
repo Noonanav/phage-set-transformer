@@ -1,0 +1,28 @@
+# cv_params_example.yaml
+# Fixed hyperparameters for CV evaluation
+# Replace these values with your optimized parameters
+
+# Model architecture
+use_cross_attention: true
+num_heads: 8
+temperature: 0.1
+strain_inds: 256
+phage_inds: 128
+num_isab_layers: 2
+ln: true
+num_seeds: 1
+normalization_type: "layer_norm"
+use_residual_classifier: true
+
+# Classifier
+dropout: 0.1
+classifier_hidden_layers: 3
+activation_function: "gelu"
+
+# Training
+learning_rate: 0.0001
+batch_size: 64
+use_phage_weights: true
+weight_decay: 0.01
+scheduler_type: "one_cycle"
+warmup_ratio: 0.1

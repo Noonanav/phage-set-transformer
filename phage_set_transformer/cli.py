@@ -16,6 +16,7 @@ import torch
 from .training import train_model_with_params
 from .optimization import run_cv_optimization
 from .evaluation import predict
+from .cv_evaluation import run_cv_evaluation, run_single_fold_seed, load_fixed_params
 
 
 def _add_common_data_args(p):
@@ -91,10 +92,50 @@ def _cmd_predict(args):
     print(f"Predictions saved to {out}")
 
 
+# ---------------------------------------------------------------------
+# Sub-command: cv-evaluate
+# ---------------------------------------------------------------------
+def _cmd_cv_evaluate(args):
+    """Run cross-validation evaluation with fixed hyperparameters."""
+    if hasattr(args, 'job_id') and args.job_id is not None:
+        # SLURM array mode - run single fold×seed combination
+        run_single_fold_seed(
+            interactions_path=args.interactions,
+            strain_embeddings_path=args.strain_embeddings,
+            phage_embeddings_path=args.phage_embeddings,
+            params_config_path=args.params_config,
+            job_id=args.job_id,
+            n_folds=args.folds,
+            seeds_per_fold=args.seeds_per_fold,
+            base_seed=args.seed,
+            output_dir=args.output,
+            num_epochs=args.epochs,
+            patience=args.patience,
+            return_attention=args.attention,
+        )
+        print(f"Completed job {args.job_id}")
+    else:
+        # Full evaluation mode
+        run_cv_evaluation(
+            interactions_path=args.interactions,
+            strain_embeddings_path=args.strain_embeddings,
+            phage_embeddings_path=args.phage_embeddings,
+            params_config_path=args.params_config,
+            n_folds=args.folds,
+            seeds_per_fold=args.seeds_per_fold,
+            base_seed=args.seed,
+            output_dir=args.output,
+            num_epochs=args.epochs,
+            patience=args.patience,
+            return_attention=args.attention,
+        )
+        print("CV evaluation complete!")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pst",
-        description="Phage–Set-Transformer utilities (train | optimise | predict)",
+        description="Phage–Set-Transformer utilities (train | optimise | predict | cv-evaluate)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -138,6 +179,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     _add_common_data_args(p)
     p.set_defaults(func=_cmd_predict)
+
+    # cv-evaluate ------------------------------------------------------
+    cv = sub.add_parser("cv-evaluate", help="Cross-validation evaluation with fixed hyperparameters")
+    _add_common_data_args(cv)
+    cv.add_argument("--params-config", required=True, help="Path to YAML file with fixed hyperparameters")
+    cv.add_argument("-o", "--output", default=None, help="Output directory (defaults to timestamped)")
+    cv.add_argument("--folds", type=int, default=5, help="Number of CV folds")
+    cv.add_argument("--seeds-per-fold", type=int, default=3, help="Number of random seeds per fold")
+    cv.add_argument("--epochs", type=int, default=150, help="Training epochs per model")
+    cv.add_argument("--patience", type=int, default=15, help="Early stopping patience")
+    cv.add_argument("--seed", type=int, default=42, help="Base random seed")
+    cv.add_argument("--attention", action="store_true", help="Save attention weights")
+    cv.add_argument("--val-batch-size", type=int, default=None, help="Validation batch size")
+    cv.add_argument("--job-id", type=int, default=None, help="SLURM array job ID (for single fold×seed)")
+    cv.set_defaults(func=_cmd_cv_evaluate)
 
     return parser
 

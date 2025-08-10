@@ -111,6 +111,7 @@ def run_single_fold_seed(
         scheduler_type=fixed_params["scheduler_type"],
         warmup_ratio=fixed_params["warmup_ratio"],
         weight_decay=fixed_params["weight_decay"],
+        metrics_dir=str(run_dir),
     )
     
     # Evaluate model (reuse existing function)

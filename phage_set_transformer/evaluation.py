@@ -65,18 +65,91 @@ def evaluate_full(model: nn.Module,
             weights = weights.to(device) if use_phage_weights else None
 
             # Forward pass
-            if return_attention and model.use_cross_attention:
-                logits, (strain_attn, phage_attn) = model(
+            if return_attention:
+                logits, attention_data = model(
                     strain_emb, phage_emb, strain_mask, phage_mask, return_attn=True
                 )
-                # Store attention weights
-                for i in range(len(strain_ids)):
-                    all_attention_weights.append({
-                        'strain': strain_ids[i],
-                        'phage': phage_ids[i],
-                        'strain_to_phage_attn': strain_attn[i].cpu().numpy(),
-                        'phage_to_strain_attn': phage_attn[i].cpu().numpy()
-                    })
+                
+                # Handle different attention formats
+                if model.use_cross_attention:
+                    # Cross-attention format: (strain_attn, phage_attn) - UNCHANGED
+                    strain_attn, phage_attn = attention_data
+                    for i in range(len(strain_ids)):
+                        all_attention_weights.append({
+                            'strain': strain_ids[i],
+                            'phage': phage_ids[i],
+                            'strain_to_phage_attn': strain_attn[i].cpu().numpy() if strain_attn is not None else None,
+                            'phage_to_strain_attn': phage_attn[i].cpu().numpy() if phage_attn is not None else None
+                        })
+                else:
+                    # Non-cross-attention format: (internal_attention_dict, None)
+                    internal_attention, _ = attention_data
+                    for i in range(len(strain_ids)):
+                        attention_dict = {
+                            'strain': strain_ids[i],
+                            'phage': phage_ids[i],
+                        }
+                        
+                        # Process strain encoder attention with inducing point analysis
+                        if internal_attention and 'strain_encoder_detailed' in internal_attention:
+                            strain_detailed = internal_attention['strain_encoder_detailed']
+                            if strain_detailed and strain_detailed['inducing_to_genes'] is not None:
+                                # Save raw attention weights
+                                inducing_to_genes = strain_detailed['inducing_to_genes'][i]  # [heads, n_inducing, n_genes]
+                                genes_to_inducing = strain_detailed['genes_to_inducing'][i]  # [heads, n_genes, n_inducing]
+                                
+                                attention_dict['strain_inducing_to_genes_attn'] = inducing_to_genes.cpu().numpy()
+                                attention_dict['strain_genes_to_inducing_attn'] = genes_to_inducing.cpu().numpy()
+                                
+                                # Calculate gene-to-inducing-point assignments
+                                avg_attention = inducing_to_genes.mean(dim=0)  # [n_inducing, n_genes]
+                                gene_primary_inducing = avg_attention.argmax(dim=0).cpu().numpy()  # Which inducing point per gene
+                                inducing_point_strength = avg_attention.max(dim=0)[0].cpu().numpy()  # Strength of assignment
+                                
+                                attention_dict['strain_gene_primary_inducing'] = gene_primary_inducing
+                                attention_dict['strain_inducing_strength'] = inducing_point_strength
+                        
+                        # Process phage encoder attention with inducing point analysis  
+                        if internal_attention and 'phage_encoder_detailed' in internal_attention:
+                            phage_detailed = internal_attention['phage_encoder_detailed']
+                            if phage_detailed and phage_detailed['inducing_to_genes'] is not None:
+                                # Save raw attention weights
+                                inducing_to_genes = phage_detailed['inducing_to_genes'][i]  # [heads, n_inducing, n_genes]
+                                genes_to_inducing = phage_detailed['genes_to_inducing'][i]  # [heads, n_genes, n_inducing]
+                                
+                                attention_dict['phage_inducing_to_genes_attn'] = inducing_to_genes.cpu().numpy()
+                                attention_dict['phage_genes_to_inducing_attn'] = genes_to_inducing.cpu().numpy()
+                                
+                                # Calculate gene-to-inducing-point assignments
+                                avg_attention = inducing_to_genes.mean(dim=0)  # [n_inducing, n_genes]
+                                gene_primary_inducing = avg_attention.argmax(dim=0).cpu().numpy()
+                                inducing_point_strength = avg_attention.max(dim=0)[0].cpu().numpy()
+                                
+                                attention_dict['phage_gene_primary_inducing'] = gene_primary_inducing
+                                attention_dict['phage_inducing_strength'] = inducing_point_strength
+                        
+                        # Process PMA attention (gene importance for prediction)
+                        if internal_attention and 'strain_pma_attn' in internal_attention:
+                            strain_pma = internal_attention['strain_pma_attn']
+                            if strain_pma is not None:
+                                attention_dict['strain_pma_attn'] = strain_pma[i].cpu().numpy()
+                                
+                                # Calculate gene importance scores (average across heads)
+                                pma_avg = strain_pma[i].mean(dim=0)  # [n_seeds, n_genes]
+                                gene_importance = pma_avg.max(dim=0)[0].cpu().numpy()  # Max importance per gene
+                                attention_dict['strain_gene_importance'] = gene_importance
+                        
+                        if internal_attention and 'phage_pma_attn' in internal_attention:
+                            phage_pma = internal_attention['phage_pma_attn']
+                            if phage_pma is not None:
+                                attention_dict['phage_pma_attn'] = phage_pma[i].cpu().numpy()
+                                
+                                # Calculate gene importance scores
+                                pma_avg = phage_pma[i].mean(dim=0)  # [n_seeds, n_genes]
+                                gene_importance = pma_avg.max(dim=0)[0].cpu().numpy()
+                                attention_dict['phage_gene_importance'] = gene_importance
+                        
+                        all_attention_weights.append(attention_dict)
             else:
                 logits = model(strain_emb, phage_emb, strain_mask, phage_mask)
 

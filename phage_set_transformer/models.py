@@ -119,11 +119,28 @@ class ISAB(nn.Module):
         self.mab1 = MAB(dim_out, dim_in, dim_out, num_heads, ln=ln, temperature=temperature)
         self.mab2 = MAB(dim_in, dim_out, dim_out, num_heads, ln=ln, temperature=temperature)
 
-    def forward(self, X: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
-        H = self.mab1(self.I.repeat(X.size(0), 1, 1), X, mask=mask, chunk_size=None)
-        H = self.mab2(X, H, chunk_size=self.chunk_size)
-        return H
+    def forward(self, X: torch.Tensor, mask: Optional[torch.Tensor] = None, return_attn: bool = False):
+        if return_attn:
+            # Get both attentions in single pass
+            H, mab1_attn = self.mab1(self.I.repeat(X.size(0), 1, 1), X, mask=mask, return_attn=True)
+            H, mab2_attn = self.mab2(X, H, chunk_size=self.chunk_size, return_attn=True)
+            
+            # Store both for access via separate method
+            self._last_mab1_attn = mab1_attn
+            self._last_mab2_attn = mab2_attn
+            
+            return H, mab2_attn
+        else:
+            H = self.mab1(self.I.repeat(X.size(0), 1, 1), X, mask=mask, chunk_size=None)
+            H = self.mab2(X, H, chunk_size=self.chunk_size)
+            return H
 
+    def get_detailed_attention(self):
+        """Get both MAB attention weights from last forward pass."""
+        return {
+            'inducing_to_genes': getattr(self, '_last_mab1_attn', None),
+            'genes_to_inducing': getattr(self, '_last_mab2_attn', None)
+        }
 
 class PMA(nn.Module):
     """Pooling by Multihead Attention with configurable parameters."""
@@ -136,11 +153,16 @@ class PMA(nn.Module):
         nn.init.xavier_uniform_(self.S)
         self.mab = MAB(dim, dim, dim, num_heads, ln=ln, temperature=temperature)
 
-    def forward(self, X: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, mask: Optional[torch.Tensor] = None, return_attn: bool = False) -> torch.Tensor:
         B = X.size(0)
         S = self.S.repeat(B, 1, 1)
-        O = self.mab(S, X, mask=mask)
-        return O
+        
+        if return_attn:
+            O, attn = self.mab(S, X, mask=mask, return_attn=True)
+            return O, attn
+        else:
+            O = self.mab(S, X, mask=mask)
+            return O
 
 
 class CrossAttention(nn.Module):
@@ -174,11 +196,26 @@ class FlexibleSetEncoder(nn.Module):
             self.layers.append(ISAB(dim_output, dim_output, num_heads, num_inds, ln=ln,
                                     temperature=temperature, chunk_size=chunk_size))
 
-    def forward(self, X: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, mask: Optional[torch.Tensor] = None, return_attn: bool = False) -> torch.Tensor:
         H = X
-        for layer in self.layers:
-            H = layer(H, mask=mask)
-        return H
+        last_layer_attn = None
+        
+        for i, layer in enumerate(self.layers):
+            if return_attn and i == len(self.layers) - 1:  # Only last layer attention
+                H, last_layer_attn = layer(H, mask=mask, return_attn=True)
+            else:
+                H = layer(H, mask=mask, return_attn=False)
+        
+        if return_attn:
+            return H, last_layer_attn  # BACKWARDS COMPATIBLE: single tensor
+        else:
+            return H
+
+    def get_detailed_attention(self):
+        """Get detailed attention from last layer including inducing point associations."""
+        if hasattr(self.layers[-1], 'get_detailed_attention'):
+            return self.layers[-1].get_detailed_attention()
+        return None
 
 class ResidualBlock(nn.Module):
     """Single residual block: H = H + (LayerNorm→Linear→Activation→Dropout)(H)"""
@@ -326,7 +363,7 @@ class FlexibleStrainPhageTransformer(nn.Module):
             
         Returns:
             logits: [B, 1]
-            attention_weights: Optional tuple of (strain_attn, phage_attn) if return_attn=True
+            attention_weights: Optional tuple of attention data if return_attn=True
         """
         # Normalize inputs if specified
         if self.normalization_type == "layer_norm":
@@ -341,30 +378,49 @@ class FlexibleStrainPhageTransformer(nn.Module):
         phage_genes = self.phage_expand(phage_genes)
 
         # Encode each genome with set encoders
-        strain_enc = self.strain_encoder(strain_genes, mask=strain_mask)
-        phage_enc = self.phage_encoder(phage_genes, mask=phage_mask)
+        if return_attn:
+            try:
+                strain_enc, strain_encoder_attn = self.strain_encoder(strain_genes, mask=strain_mask, return_attn=True)
+                phage_enc, phage_encoder_attn = self.phage_encoder(phage_genes, mask=phage_mask, return_attn=True)
+            except TypeError:
+                strain_enc = self.strain_encoder(strain_genes, mask=strain_mask)
+                phage_enc = self.phage_encoder(phage_genes, mask=phage_mask)
+                strain_encoder_attn = phage_encoder_attn = None
+        else:
+            strain_enc = self.strain_encoder(strain_genes, mask=strain_mask)
+            phage_enc = self.phage_encoder(phage_genes, mask=phage_mask)
+            strain_encoder_attn = phage_encoder_attn = None
 
         # Cross-attention (optional)
+        strain_attn = None
+        phage_attn = None
+        
         if self.use_cross_attention:
             if return_attn:
                 strain_attended, strain_attn = self.strain_to_phage(strain_enc, phage_enc,
-                                                                   mask=phage_mask, return_attn=True)
+                                                                mask=phage_mask, return_attn=True)
                 phage_attended, phage_attn = self.phage_to_strain(phage_enc, strain_enc,
-                                                                 mask=strain_mask, return_attn=True)
+                                                                mask=strain_mask, return_attn=True)
             else:
                 strain_attended = self.strain_to_phage(strain_enc, phage_enc, mask=phage_mask)
                 phage_attended = self.phage_to_strain(phage_enc, strain_enc, mask=strain_mask)
-                strain_attn = None
-                phage_attn = None
         else:
             strain_attended = strain_enc
             phage_attended = phage_enc
-            strain_attn = None
-            phage_attn = None
 
         # Pool each set
-        strain_pooled = self.strain_pma(strain_attended, mask=strain_mask)
-        phage_pooled = self.phage_pma(phage_attended, mask=phage_mask)
+        if return_attn:
+            try:
+                strain_pooled, strain_pma_attn = self.strain_pma(strain_attended, mask=strain_mask, return_attn=True)
+                phage_pooled, phage_pma_attn = self.phage_pma(phage_attended, mask=phage_mask, return_attn=True)
+            except TypeError:
+                strain_pooled = self.strain_pma(strain_attended, mask=strain_mask)
+                phage_pooled = self.phage_pma(phage_attended, mask=phage_mask)
+                strain_pma_attn = phage_pma_attn = None
+        else:
+            strain_pooled = self.strain_pma(strain_attended, mask=strain_mask)
+            phage_pooled = self.phage_pma(phage_attended, mask=phage_mask)
+            strain_pma_attn = phage_pma_attn = None
 
         strain_vec = strain_pooled.flatten(1)  # [B, num_seeds*d]
         phage_vec = phage_pooled.flatten(1)    # [B, num_seeds*d]
@@ -373,9 +429,22 @@ class FlexibleStrainPhageTransformer(nn.Module):
         combined = torch.cat([strain_vec, phage_vec], dim=-1)  # [B, 2*num_seeds*d]
         logits = self.classifier(combined)                      # [B, 1]
 
-        # Return attention if requested
-        if return_attn and self.use_cross_attention:
-            return logits, (strain_attn, phage_attn)
+        if return_attn:
+            if self.use_cross_attention:
+                # Existing format: (logits, (strain_attn, phage_attn))
+                return logits, (strain_attn, phage_attn)
+            else:
+                # New format for non-cross-attention: pack internal attention as tuple
+                internal_attention = {
+                    'strain_encoder_attn': strain_encoder_attn,
+                    'phage_encoder_attn': phage_encoder_attn,
+                    'strain_pma_attn': strain_pma_attn,
+                    'phage_pma_attn': phage_pma_attn,
+                    # Add access to detailed encoder attention
+                    'strain_encoder_detailed': self.strain_encoder.get_detailed_attention(),
+                    'phage_encoder_detailed': self.phage_encoder.get_detailed_attention()
+                }
+                return logits, (internal_attention, None)  # Tuple format maintained
         else:
             return logits
 

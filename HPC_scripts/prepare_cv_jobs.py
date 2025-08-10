@@ -51,7 +51,12 @@ TEMPLATE = """\
 #SBATCH --error={out_dir}/slurm-%A_%a.err
 
 module load anaconda3
-conda activate {conda_env}
+conda activate {conda_env} 2>&1 || {{
+    echo "Direct activation failed, trying with conda init..."
+    conda init bash >/dev/null 2>&1
+    source ~/.bashrc >/dev/null 2>&1
+    conda activate {conda_env}
+}}
 
 set -euo pipefail
 echo "Running CV job $SLURM_ARRAY_TASK_ID on $HOSTNAME at $(date)"

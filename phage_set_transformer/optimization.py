@@ -104,8 +104,11 @@ def _cv_objective(
     cv_epochs: int = 50,
     cv_patience: int = 7,
     val_batch_size: Optional[int] = None,
+    stability_min_epoch: int = 8,
+    stability_loss_margin: float = 0.15,
+    stability_loss_lookback: int = 8,
 ) -> float:
-    """Return **median MCC** across *n_folds* folds (prunable)."""
+    """Return **stability-aware median MCC** across *n_folds* folds (prunable)."""
     params = _suggest_params(trial, search_config) 
     fold_mcc: List[float] = []
 
@@ -154,14 +157,13 @@ def _cv_objective(
             use_residual_classifier=params["use_residual_classifier"],
         )
         model = init_attention_weights(model)
-
         model = model.to(device)
 
-        _, _val_mcc = train_model(
+        history, _val_mcc = train_model(
             model,
             train_loader,
             val_loader,
-            trial=None,
+            trial=None,  # Don't pass trial to avoid double reporting
             num_epochs=cv_epochs,
             learning_rate=params["learning_rate"],
             patience=cv_patience, 
@@ -169,16 +171,26 @@ def _cv_objective(
             scheduler_type=params["scheduler_type"],
             warmup_ratio=params["warmup_ratio"],
             weight_decay=params["weight_decay"],
-            device=device,               # default cuda/auto
+            device=device,
         )
 
-        fold_mcc.append(_val_mcc)
-        trial.report(_val_mcc, step=fold_idx)
+        # Apply stability filtering to fold result
+        stable_mcc = _get_stable_best_mcc(
+            history['val_loss'],
+            history['val_mcc'],
+            min_epoch=stability_min_epoch,
+            loss_margin=stability_loss_margin,
+            loss_lookback=stability_loss_lookback
+        )
+        fold_mcc.append(stable_mcc)
+
+        # Report stability-filtered MCC for pruning decisions
+        trial.report(stable_mcc, step=fold_idx)
         if trial.should_prune():
             raise optuna.TrialPruned()
 
     median_mcc = float(np.median(fold_mcc))
-    # lightweight report artefact – full pickle/report handled outside
+    # lightweight report artefact
     with (base_trial_dir / f"trial_{trial.number}_fold_mcc.json").open("w") as f:
         _json.dump({"fold_mcc": fold_mcc, "median_mcc": median_mcc}, f, indent=2)
 
@@ -204,6 +216,9 @@ def run_cv_optimization(
     log_level: str = "INFO",
     search_config_path: Optional[str] = None,
     val_batch_size: Optional[int] = None,
+    stability_min_epoch: int = 8,
+    stability_loss_margin: float = 0.15,
+    stability_loss_lookback: int = 8,
 ) -> Tuple[optuna.Study, Dict[str, Any]]:
     """
     Run an Optuna hyper-parameter search **with k-fold CV per trial** and then
@@ -282,6 +297,9 @@ def run_cv_optimization(
             cv_epochs=cv_epochs,
             cv_patience=cv_patience,
             val_batch_size=val_batch_size,
+            stability_min_epoch=stability_min_epoch,
+            stability_loss_margin=stability_loss_margin,
+            stability_loss_lookback=stability_loss_lookback,
         ),
         n_trials=trials_to_run,
         show_progress_bar=True,
@@ -512,6 +530,47 @@ def _split_by_strain(df: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.Data
         best_test_df = df[~df["strain"].isin(train_strains)]
     
     return best_train_df, best_test_df
+
+def _get_stable_best_mcc(
+    loss_history: List[float], 
+    mcc_history: List[float],
+    min_epoch: int = 8,
+    loss_margin: float = 0.15,
+    loss_lookback: int = 8
+) -> float:
+    """
+    Return the best MCC from stable epochs after min_epoch.
+    
+    Args:
+        loss_history: List of validation losses
+        mcc_history: List of validation MCCs
+        min_epoch: Only consider epochs >= this value
+        loss_margin: Allow loss to be this much higher than recent minimum (fraction)
+        loss_lookback: Number of recent epochs to consider for minimum loss
+    
+    Returns:
+        Best MCC from stable epochs, or 0 if no stable epochs
+    """
+    if len(loss_history) < min_epoch:
+        return 0.0  # Not enough training
+    
+    stable_mccs = []
+    
+    for epoch in range(min_epoch, len(loss_history)):
+        # Get minimum loss from recent epochs
+        recent_start = epoch - loss_lookback
+        recent_min_loss = min(loss_history[recent_start:epoch])
+        
+        current_loss = loss_history[epoch]
+        
+        # Check if current loss is reasonable
+        if current_loss <= recent_min_loss * (1 + loss_margin):
+            stable_mccs.append(mcc_history[epoch])
+    
+    if stable_mccs:
+        return max(stable_mccs)
+    else:
+        return 0.0  # No stable epochs found
 
 
 def _model_kw() -> set:

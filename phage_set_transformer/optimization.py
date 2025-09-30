@@ -219,8 +219,8 @@ def run_cv_optimization(
     search_config_path: Optional[str] = None,
     val_batch_size: Optional[int] = None,
     stability_min_epoch: int = 8,
-    stability_loss_margin: float = 0.15,
-    stability_loss_lookback: int = 8,
+    stability_loss_margin: float = 0.08,
+    stability_loss_lookback: int = 5,
     accumulation_steps: int = 4, 
 ) -> Tuple[optuna.Study, Dict[str, Any]]:
     """
@@ -538,43 +538,83 @@ def _split_by_strain(df: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.Data
     
     return best_train_df, best_test_df
 
-def _get_stable_best_aupr( 
+def _get_stable_best_aupr(
     loss_history: List[float], 
     aupr_history: List[float],
     min_epoch: int = 8,
-    loss_margin: float = 0.15,
-    loss_lookback: int = 8
+    loss_margin: float = 0.08,
+    loss_lookback: int = 5,
+    early_epoch_window: int = 3
 ) -> float:
     """
-    Return the best AUPR from stable epochs after min_epoch.
+    Select best AUPR from epochs with stable/decreasing validation loss.
+    
+    This function filters training epochs to select only those that show good
+    generalization (low loss) without overfitting. It uses multiple criteria:
+    1. Loss must be near the global minimum (within margin)
+    2. Loss must not exceed early training baseline (no severe overfitting)
+    3. Loss must not be on a sharp upward trend (if enough history exists)
+    
+    The function returns the maximum AUPR among epochs passing all filters.
+    If no epochs pass, returns 0.0 (will likely trigger Optuna pruning).
     
     Args:
-        loss_history: List of validation losses
-        aupr_history: List of validation AUPRs
-        min_epoch: Only consider epochs >= this value
-        loss_margin: Allow loss to be this much higher than recent minimum (fraction)
-        loss_lookback: Number of recent epochs to consider for minimum loss
+        loss_history: List of validation losses, one per epoch
+        aupr_history: List of validation AUPRs, one per epoch (same length as loss_history)
+        min_epoch: Minimum epoch to consider (skip noisy early training).
+            Must have at least (min_epoch + early_epoch_window) epochs total.
+        loss_margin: Allowed fractional increase above global minimum loss.
+            E.g., 0.08 means accept losses up to 8% above the best achieved.
+        loss_lookback: Number of recent epochs to check for upward trends.
+            If current loss is >10% above recent average, epoch is rejected.
+        early_epoch_window: Number of epochs to use for early baseline calculation.
+            Median of these epochs establishes the "no worse than early training" threshold.
     
     Returns:
-        Best AUPR from stable epochs, or 0 if no stable epochs
+        Maximum AUPR from stable epochs, or 0.0 if no epochs meet criteria.
     """
-    if len(loss_history) < min_epoch:
+    # Ensure we have enough epochs for meaningful analysis
+    if len(loss_history) < min_epoch + early_epoch_window:
         return 0.0
     
+    # STEP 1: Establish early training baseline
+    # Use median of first few post-min_epoch epochs to detect overfitting
+    early_start = min_epoch
+    early_end = min_epoch + early_epoch_window
+    early_baseline = float(np.median(loss_history[early_start:early_end]))
+    
+    # STEP 2: Find global minimum loss and set threshold
+    global_min_loss = min(loss_history[min_epoch:])
+    loss_threshold = global_min_loss * (1 + loss_margin)
+    
+    # STEP 3: Evaluate each epoch against all criteria
     stable_auprs = []
     
     for epoch in range(min_epoch, len(loss_history)):
-        recent_start = epoch - loss_lookback
-        recent_min_loss = min(loss_history[recent_start:epoch])
         current_loss = loss_history[epoch]
         
-        if current_loss <= recent_min_loss * (1 + loss_margin):
-            stable_auprs.append(aupr_history[epoch]) 
+        # Criterion 1: Loss must be near optimal (within margin of global minimum)
+        if current_loss > loss_threshold:
+            continue
+            
+        # Criterion 2: Loss must not be worse than early training (overfitting check)
+        if current_loss > early_baseline:
+            continue
+        
+        # Criterion 3: Loss must not be on sharp upward trend (if enough history)
+        if epoch >= min_epoch + loss_lookback:
+            recent_losses = loss_history[epoch - loss_lookback:epoch]
+            recent_mean = float(np.mean(recent_losses))
+            
+            # Reject if current loss is >10% higher than recent average
+            if current_loss > recent_mean * 1.10:
+                continue
+        
+        # All criteria passed - this epoch has stable performance
+        stable_auprs.append(aupr_history[epoch])
     
-    if stable_auprs:
-        return max(stable_auprs)
-    else:
-        return 0.0
+    # Return best AUPR from stable epochs, or 0.0 if none qualify
+    return max(stable_auprs) if stable_auprs else 0.0
 
 
 def _model_kw() -> set:

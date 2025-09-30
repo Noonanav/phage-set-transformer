@@ -47,9 +47,9 @@ def _cmd_optimize(args):
         cv_patience=getattr(args, 'cv_patience', 7),
         val_batch_size=getattr(args, 'val_batch_size', None),
         stability_min_epoch=getattr(args, 'stability_min_epoch', 8),
-        stability_loss_margin=getattr(args, 'stability_loss_margin', 0.15),
-        stability_loss_lookback=getattr(args, 'stability_loss_lookback', 8),
-        accumulation_steps=args.accumulation_steps, 
+        stability_loss_margin=getattr(args, 'stability_loss_margin', 0.08),
+        stability_loss_lookback=getattr(args, 'stability_loss_lookback', 5),
+        accumulation_steps=args.accumulation_steps,
     )
     print(f"Best AUPR = {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
@@ -159,8 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--cv-patience", type=int, default=7, help="Patience for CV optimization (default: 7)")
     o.add_argument("--val-batch-size", type=int, default=None, help="Validation batch size (if None, uses same as training)")
     o.add_argument("--stability-min-epoch", type=int, default=8, help="Minimum epoch to consider for stability filtering")
-    o.add_argument("--stability-loss-margin", type=float, default=0.15, help="Allowed loss increase fraction for stability check")
-    o.add_argument("--stability-loss-lookback", type=int, default=8, help="Number of epochs to look back for loss comparison")
+    o.add_argument("--stability-loss-margin", type=float, default=0.08, help="Allowed loss increase fraction for stability check")
+    o.add_argument("--stability-loss-lookback", type=int, default=5, help="Number of epochs to look back for loss comparison")
     o.add_argument("--accumulation-steps", type=int, default=4, help="Gradient accumulation steps (default: 4)")
     o.set_defaults(func=_cmd_optimize)
 

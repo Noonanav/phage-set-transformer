@@ -109,9 +109,9 @@ def _cv_objective(
     stability_loss_lookback: int = 8,
     accumulation_steps: int = 4,
 ) -> float:
-    """Return **stability-aware median MCC** across *n_folds* folds (prunable)."""
+    """Return **stability-aware median AUPR** across *n_folds* folds (prunable)."""
     params = _suggest_params(trial, search_config) 
-    fold_mcc: List[float] = []
+    fold_aupr: List[float] = []
 
     from .utils import get_device
     device = get_device()
@@ -160,7 +160,7 @@ def _cv_objective(
         model = init_attention_weights(model)
         model = model.to(device)
 
-        history, _val_mcc = train_model(
+        history, _val_aupr = train_model(
             model,
             train_loader,
             val_loader,
@@ -177,26 +177,26 @@ def _cv_objective(
         )
 
         # Apply stability filtering to fold result
-        stable_mcc = _get_stable_best_mcc(
+        stable_aupr = _get_stable_best_aupr(
             history['val_loss'],
-            history['val_mcc'],
+            history['val_aupr'],
             min_epoch=stability_min_epoch,
             loss_margin=stability_loss_margin,
             loss_lookback=stability_loss_lookback
         )
-        fold_mcc.append(stable_mcc)
+        fold_aupr.append(stable_aupr) 
 
-        # Report stability-filtered MCC for pruning decisions
-        trial.report(stable_mcc, step=fold_idx)
+        # Report stability-filtered AUPR for pruning decisions
+        trial.report(stable_aupr, step=fold_idx)
         if trial.should_prune():
             raise optuna.TrialPruned()
 
-    median_mcc = float(np.median(fold_mcc))
+    median_aupr = float(np.median(fold_aupr))
     # lightweight report artefact
-    with (base_trial_dir / f"trial_{trial.number}_fold_mcc.json").open("w") as f:
-        _json.dump({"fold_mcc": fold_mcc, "median_mcc": median_mcc}, f, indent=2)
+    with (base_trial_dir / f"trial_{trial.number}_fold_aupr.json").open("w") as f:
+        _json.dump({"fold_aupr": fold_aupr, "median_aupr": median_aupr}, f, indent=2)
 
-    return median_mcc
+    return median_aupr
 
 
 # -----------------------------------------------------------------------------#
@@ -310,7 +310,7 @@ def run_cv_optimization(
     )
 
     if len(study.trials) > 0 and any(trial.value is not None for trial in study.trials):
-        _log.info("Best median MCC = %.4f", study.best_value)
+        _log.info("Best median AUPR = %.4f", study.best_value)
     else:
         _log.info("No successful trials yet (all trials pruned or failed)")
 
@@ -466,11 +466,11 @@ def _retrain_best_params(
         )
         torch.save(torch_save, final_models_dir / f"model_seed_{seed}.pt")
 
-    mccs = [m["mcc"] for m in all_metrics]
+    auprs = [m["pr_auc"] for m in all_metrics]
     summary = dict(
-        median_mcc=float(np.median(mccs)),
-        mean_mcc=float(np.mean(mccs)),
-        std_mcc=float(np.std(mccs)),
+        median_aupr=float(np.median(auprs)),
+        mean_aupr=float(np.mean(auprs)),
+        std_aupr=float(np.std(auprs)),
         per_seed_metrics=all_metrics,
     )
     with (base_dir / "multi_seed_summary.json").open("w") as f:
@@ -538,46 +538,43 @@ def _split_by_strain(df: pd.DataFrame, seed: int) -> Tuple[pd.DataFrame, pd.Data
     
     return best_train_df, best_test_df
 
-def _get_stable_best_mcc(
+def _get_stable_best_aupr( 
     loss_history: List[float], 
-    mcc_history: List[float],
+    aupr_history: List[float],
     min_epoch: int = 8,
     loss_margin: float = 0.15,
     loss_lookback: int = 8
 ) -> float:
     """
-    Return the best MCC from stable epochs after min_epoch.
+    Return the best AUPR from stable epochs after min_epoch.
     
     Args:
         loss_history: List of validation losses
-        mcc_history: List of validation MCCs
+        aupr_history: List of validation AUPRs
         min_epoch: Only consider epochs >= this value
         loss_margin: Allow loss to be this much higher than recent minimum (fraction)
         loss_lookback: Number of recent epochs to consider for minimum loss
     
     Returns:
-        Best MCC from stable epochs, or 0 if no stable epochs
+        Best AUPR from stable epochs, or 0 if no stable epochs
     """
     if len(loss_history) < min_epoch:
-        return 0.0  # Not enough training
+        return 0.0
     
-    stable_mccs = []
+    stable_auprs = []
     
     for epoch in range(min_epoch, len(loss_history)):
-        # Get minimum loss from recent epochs
         recent_start = epoch - loss_lookback
         recent_min_loss = min(loss_history[recent_start:epoch])
-        
         current_loss = loss_history[epoch]
         
-        # Check if current loss is reasonable
         if current_loss <= recent_min_loss * (1 + loss_margin):
-            stable_mccs.append(mcc_history[epoch])
+            stable_auprs.append(aupr_history[epoch]) 
     
-    if stable_mccs:
-        return max(stable_mccs)
+    if stable_auprs:
+        return max(stable_auprs)
     else:
-        return 0.0  # No stable epochs found
+        return 0.0
 
 
 def _model_kw() -> set:

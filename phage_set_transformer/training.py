@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.metrics import matthews_corrcoef
+from sklearn.metrics import matthews_corrcoef, average_precision_score
 from torch.utils.data import DataLoader
 import optuna
 
@@ -54,7 +54,7 @@ def train_epoch(model: nn.Module,
         accumulation_steps: Number of batches to accumulate gradients over
         
     Returns:
-        Tuple of (epoch_loss, epoch_mcc)
+        Tuple of (epoch_loss, best_val_aupr)
     """
     model.train()
     total_loss = 0
@@ -105,9 +105,9 @@ def train_epoch(model: nn.Module,
     epoch_loss = total_loss / len(train_loader)
     binary_preds = (np.array(all_preds) > 0.5).astype(int)
     binary_labels = (np.array(all_labels) > 0.5).astype(int)
-    epoch_mcc = matthews_corrcoef(binary_labels, binary_preds)
+    epoch_aupr = average_precision_score(binary_labels, all_preds)
 
-    return epoch_loss, epoch_mcc
+    return epoch_loss, epoch_aupr
 
 
 def validate(model: nn.Module, 
@@ -161,9 +161,9 @@ def validate(model: nn.Module,
     val_loss = total_loss / len(val_loader)
     binary_preds = (np.array(all_preds) > 0.5).astype(int)
     binary_labels = (np.array(all_labels) > 0.5).astype(int)
-    val_mcc = matthews_corrcoef(binary_labels, binary_preds)
+    val_aupr = average_precision_score(binary_labels, all_preds)
 
-    return val_loss, val_mcc, binary_preds, binary_labels
+    return val_loss, val_aupr, binary_preds, binary_labels
 
 
 def train_model(model: nn.Module, 
@@ -223,8 +223,8 @@ def train_model(model: nn.Module,
     history = {
         'train_loss': [],
         'val_loss': [],
-        'train_mcc': [],
-        'val_mcc': [],
+        'train_aupr': [],
+        'val_aupr': [],
         'lr': []
     }
 
@@ -233,19 +233,19 @@ def train_model(model: nn.Module,
     try:
         for epoch in range(num_epochs):
             # Train and validate
-            train_loss, train_mcc = train_epoch(
+            train_loss, train_aupr = train_epoch(
                 model, train_loader, optimizer, device,
                 scheduler, use_phage_weights, accumulation_steps
             )
-            val_loss, val_mcc, _, _ = validate(
+            val_loss, val_aupr, _, _ = validate(
                 model, val_loader, device, use_phage_weights
             )
 
             # Update history
             history['train_loss'].append(train_loss)
             history['val_loss'].append(val_loss)
-            history['train_mcc'].append(train_mcc)
-            history['val_mcc'].append(val_mcc)
+            history['train_aupr'].append(train_aupr)
+            history['val_aupr'].append(val_aupr)
             history['lr'].append(optimizer.param_groups[0]['lr'])
 
             # Add to metrics records
@@ -253,35 +253,35 @@ def train_model(model: nn.Module,
                 'epoch': epoch,
                 'train_loss': train_loss,
                 'val_loss': val_loss,
-                'train_mcc': train_mcc,
-                'val_mcc': val_mcc,
+                'train_aupr': train_aupr,
+                'val_aupr': val_aupr,
                 'lr': optimizer.param_groups[0]['lr']
             })
 
             # Log epoch summary
             logger.info(f"Epoch {epoch+1}/{num_epochs} - "
-                       f"Train Loss: {train_loss:.4f}, MCC: {train_mcc:.4f} | "
-                       f"Val Loss: {val_loss:.4f}, MCC: {val_mcc:.4f} | "
-                       f"LR: {optimizer.param_groups[0]['lr']:.6f}")
+                        f"Train Loss: {train_loss:.4f}, AUPR: {train_aupr:.4f} | "
+                        f"Val Loss: {val_loss:.4f}, AUPR: {val_aupr:.4f} | "
+                        f"LR: {optimizer.param_groups[0]['lr']:.6f}")
 
             # Update ReduceLROnPlateau scheduler if used
             if scheduler_type == "reduce_on_plateau" and scheduler is not None:
-                scheduler.step(val_mcc)
+                scheduler.step(val_aupr)
 
             # Report to Optuna for pruning
             if trial is not None:
-                trial.report(val_mcc, epoch)
+                trial.report(val_aupr, epoch)
 
-                # Handle pruning based on val_mcc
+                # Handle pruning based on val_aupr
                 if trial.should_prune():
                     logger.info("Trial pruned by Optuna.")
                     raise optuna.exceptions.TrialPruned()
 
             # Check early stopping
-            best_val_mcc = early_stopping(val_mcc, model)
+            best_val_aupr = early_stopping(val_aupr, model)
             if early_stopping.early_stop:
                 logger.info(f"Early stopping triggered at epoch {epoch+1}. "
-                           f"Best val MCC: {best_val_mcc:.4f}")
+                           f"Best val AUPR: {best_val_aupr:.4f}")
                 break
 
     except Exception as e:
@@ -302,7 +302,7 @@ def train_model(model: nn.Module,
     if early_stopping.best_model_state is not None:
         model.load_state_dict(early_stopping.best_model_state)
 
-    return history, best_val_mcc if early_stopping.best_metric is not None else val_mcc
+    return history, best_val_aupr if early_stopping.best_metric is not None else val_aupr
 
 
 def train_model_with_params(interactions_path: str,
@@ -521,7 +521,7 @@ def train_model_with_params(interactions_path: str,
     
     # Train model
     logger.info("Starting training...")
-    history, best_val_mcc = train_model(
+    history, best_val_aupr = train_model(
         model,
         train_loader,
         test_loader,

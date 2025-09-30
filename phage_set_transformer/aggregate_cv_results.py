@@ -67,8 +67,8 @@ def aggregate_metrics(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not runs:
         return {}
     
-    # Collect MCC values
-    mccs = [run['final_mcc'] for run in runs]
+    # Collect AUPR values
+    auprs = [run['final_aupr'] for run in runs]
     
     # Group by fold
     by_fold = {}
@@ -76,27 +76,27 @@ def aggregate_metrics(runs: List[Dict[str, Any]]) -> Dict[str, Any]:
         fold_id = run['fold_id']
         if fold_id not in by_fold:
             by_fold[fold_id] = []
-        by_fold[fold_id].append(run['final_mcc'])
+        by_fold[fold_id].append(run['final_aupr'])
     
     # Compute statistics
     stats = {
         'overall': {
             'n_runs': len(runs),
-            'mcc_mean': float(np.mean(mccs)),
-            'mcc_std': float(np.std(mccs)),
-            'mcc_min': float(np.min(mccs)),
-            'mcc_max': float(np.max(mccs)),
-            'mcc_median': float(np.median(mccs)),
+            'aupr_mean': float(np.mean(auprs)),
+            'aupr_std': float(np.std(auprs)),
+            'aupr_min': float(np.min(auprs)),
+            'aupr_max': float(np.max(auprs)),
+            'aupr_median': float(np.median(auprs)),
         },
         'by_fold': {}
     }
     
-    for fold_id, fold_mccs in by_fold.items():
+    for fold_id, fold_auprs in by_fold.items():
         stats['by_fold'][fold_id] = {
-            'n_runs': len(fold_mccs),
-            'mcc_mean': float(np.mean(fold_mccs)),
-            'mcc_std': float(np.std(fold_mccs)),
-            'mcc_values': fold_mccs,
+            'n_runs': len(fold_auprs),
+            'aupr_mean': float(np.mean(fold_auprs)),
+            'aupr_std': float(np.std(fold_auprs)),
+            'aupr_values': fold_auprs,
         }
     
     return stats
@@ -197,8 +197,8 @@ def main():
     overall = stats['overall']
     print(f"\nCV Evaluation Results:")
     print(f"Completed runs: {len(runs)}/{expected_runs}")
-    print(f"Overall MCC: {overall['mcc_mean']:.4f} ± {overall['mcc_std']:.4f}")
-    print(f"MCC range: [{overall['mcc_min']:.4f}, {overall['mcc_max']:.4f}]")
+    print(f"Overall AUPR: {overall['aupr_mean']:.4f} ± {overall['aupr_std']:.4f}")
+    print(f"AUPR range: [{overall['aupr_min']:.4f}, {overall['aupr_max']:.4f}]")
     print(f"Results saved to: {output_dir}")
 
 

@@ -101,7 +101,7 @@ def run_single_fold_seed(
     model = init_attention_weights(model).to(device)
     
     # Train model (reuse existing function)
-    _, best_val_mcc = train_model(
+    _, best_val_aupr = train_model(
         model, train_loader, val_loader,
         num_epochs=num_epochs,
         learning_rate=fixed_params["learning_rate"],
@@ -137,7 +137,7 @@ def run_single_fold_seed(
     summary = {
         'fold_id': fold_id,
         'seed': actual_seed, 
-        'final_mcc': metrics['mcc'],
+        'final_aupr': metrics['pr_auc'],
         'train_size': len(train_df),
         'val_size': len(test_df),
     }
@@ -145,7 +145,7 @@ def run_single_fold_seed(
     with open(run_dir / "summary.json", 'w') as f:
         json.dump(summary, f, indent=2, cls=NumpyEncoder)
     
-    _log.info(f"Completed fold {fold_id}, seed {actual_seed}. MCC: {metrics['mcc']:.4f}")
+    _log.info(f"Completed fold {fold_id}, seed {actual_seed}. AUPR: {metrics['pr_auc']:.4f}")
 
 
 def run_cv_evaluation(

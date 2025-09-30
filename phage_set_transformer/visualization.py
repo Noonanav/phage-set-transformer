@@ -19,7 +19,7 @@ def plot_training_history(history: Dict[str, List[float]],
                          trial_id: str, 
                          output_dir: str) -> None:
     """
-    Plot training and validation loss and MCC over epochs.
+    Plot training and validation loss and AUPR over epochs.
     
     Args:
         history: Dictionary with training history
@@ -42,13 +42,13 @@ def plot_training_history(history: Dict[str, List[float]],
     plt.legend()
     plt.grid(alpha=0.3)
 
-    # MCC
+    # AUPR
     plt.subplot(1, 2, 2)
-    plt.plot(range(1, epochs+1), history['train_mcc'], label='Train MCC')
-    plt.plot(range(1, epochs+1), history['val_mcc'], label='Val MCC')
+    plt.plot(range(1, epochs+1), history['train_aupr'], label='Train AUPR')
+    plt.plot(range(1, epochs+1), history['val_aupr'], label='Val AUPR')
     plt.xlabel("Epoch")
-    plt.ylabel("MCC")
-    plt.title("MCC vs. Epochs")
+    plt.ylabel("AUPR")
+    plt.title("AUPR vs. Epochs")
     plt.legend()
     plt.grid(alpha=0.3)
 
@@ -65,8 +65,8 @@ def plot_training_history(history: Dict[str, List[float]],
         'epoch': list(range(1, epochs+1)),
         'train_loss': history['train_loss'],
         'val_loss': history['val_loss'],
-        'train_mcc': history['train_mcc'],
-        'val_mcc': history['val_mcc'],
+        'train_aupr': history['train_aupr'],
+        'val_aupr': history['val_aupr'],
         'lr': history['lr']
     })
     csv_path = os.path.join(plots_dir, f"trial_{trial_id}_history.csv")

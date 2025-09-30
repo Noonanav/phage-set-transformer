@@ -51,7 +51,7 @@ def _cmd_optimize(args):
         stability_loss_lookback=getattr(args, 'stability_loss_lookback', 8),
         accumulation_steps=args.accumulation_steps, 
     )
-    print(f"Best MCC = {study.best_value:.4f}")
+    print(f"Best AUPR = {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
 
 

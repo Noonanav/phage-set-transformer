@@ -210,7 +210,7 @@ def run_cv_optimization(
     n_trials: int = 200,
     n_folds: int = 5,
     final_seeds: int = 5,
-    cv_epochs: int = 50,
+    cv_epochs: int = 100,
     cv_patience: int = 7, 
     random_state: int = 42,
     study_name: Optional[str] = None,

@@ -124,7 +124,7 @@ def validate(model: nn.Module,
         use_phage_weights: Whether to use phage-specific weights
         
     Returns:
-        Tuple of (val_loss, val_mcc, binary_preds, binary_labels)
+        Tuple of (val_loss, val_aupr, binary_preds, binary_labels)
     """
     model.eval()
     total_loss = 0
@@ -199,7 +199,7 @@ def train_model(model: nn.Module,
         metrics_dir: Directory to save metrics
         
     Returns:
-        Tuple of (history, best_val_mcc)
+        Tuple of (history, best_val_aupr)
     """
     if device is None:
         device = get_device()

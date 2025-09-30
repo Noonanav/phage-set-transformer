@@ -39,9 +39,10 @@ def train_epoch(model: nn.Module,
                 optimizer: torch.optim.Optimizer, 
                 device: torch.device, 
                 scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None, 
-                use_phage_weights: bool = True) -> Tuple[float, float]:
+                use_phage_weights: bool = True,
+                accumulation_steps: int = 1) -> Tuple[float, float]:
     """
-    Train for one epoch with optional phage-specific weights.
+    Train for one epoch with optional phage-specific weights and gradient accumulation.
     
     Args:
         model: Model to train
@@ -50,6 +51,7 @@ def train_epoch(model: nn.Module,
         device: Device to train on
         scheduler: Optional learning rate scheduler
         use_phage_weights: Whether to use phage-specific weights
+        accumulation_steps: Number of batches to accumulate gradients over
         
     Returns:
         Tuple of (epoch_loss, epoch_mcc)
@@ -59,7 +61,9 @@ def train_epoch(model: nn.Module,
     all_preds = []
     all_labels = []
 
-    for batch in train_loader:
+    optimizer.zero_grad()  # Move outside loop
+
+    for batch_idx, batch in enumerate(train_loader):
         # Unpack with weights (first 6 elements)
         strain_emb, phage_emb, strain_mask, phage_mask, labels, weights = batch[:6]
 
@@ -70,7 +74,6 @@ def train_epoch(model: nn.Module,
         labels = labels.to(device)
         weights = weights.to(device) if use_phage_weights else None
 
-        optimizer.zero_grad()
         logits = model(strain_emb, phage_emb, strain_mask, phage_mask)
 
         # Use batch-specific weights in the loss calculation if enabled
@@ -80,16 +83,21 @@ def train_epoch(model: nn.Module,
             criterion = nn.BCEWithLogitsLoss()
 
         loss = criterion(logits, labels)
+        loss = loss / accumulation_steps  # Scale loss for accumulation
 
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        optimizer.step()
         
-        if scheduler is not None:
-            if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                scheduler.step()
+        # Update weights every accumulation_steps batches
+        if (batch_idx + 1) % accumulation_steps == 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            if scheduler is not None:
+                if not isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step()
 
-        total_loss += loss.item()
+        total_loss += loss.item() * accumulation_steps  # Unscale for logging
         preds = torch.sigmoid(logits).reshape(-1).detach().cpu().numpy()
         all_preds.extend(preds)
         all_labels.extend(labels.cpu().numpy())
@@ -170,7 +178,8 @@ def train_model(model: nn.Module,
                 scheduler_type: str = "one_cycle",
                 warmup_ratio: float = 0.1,
                 weight_decay: float = 0.01,
-                metrics_dir: Optional[str] = None) -> Tuple[Dict[str, List[float]], float]:
+                metrics_dir: Optional[str] = None,
+                accumulation_steps: int = 1) -> Tuple[Dict[str, List[float]], float]:
     """
     Train model with configurable parameters and optional Optuna pruning.
     
@@ -226,7 +235,7 @@ def train_model(model: nn.Module,
             # Train and validate
             train_loss, train_mcc = train_epoch(
                 model, train_loader, optimizer, device,
-                scheduler, use_phage_weights
+                scheduler, use_phage_weights, accumulation_steps
             )
             val_loss, val_mcc, _, _ = validate(
                 model, val_loader, device, use_phage_weights
@@ -330,6 +339,7 @@ def train_model_with_params(interactions_path: str,
                            random_state: int = 42,
                            return_attention: bool = True,
                            val_batch_size: Optional[int] = None,
+                           accumulation_steps: int = 4,
                            log_level: str = "INFO") -> Dict[str, Any]:
     """
     Train a model with fixed hyperparameters.
@@ -524,7 +534,8 @@ def train_model_with_params(interactions_path: str,
         scheduler_type=scheduler_type,
         warmup_ratio=warmup_ratio,
         weight_decay=weight_decay,
-        metrics_dir=os.path.join(output_dir, "metrics")
+        metrics_dir=os.path.join(output_dir, "metrics"),
+        accumulation_steps=accumulation_steps
     )
     
     # Evaluate on test set

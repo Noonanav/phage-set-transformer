@@ -49,6 +49,7 @@ def _cmd_optimize(args):
         stability_min_epoch=getattr(args, 'stability_min_epoch', 8),
         stability_loss_margin=getattr(args, 'stability_loss_margin', 0.15),
         stability_loss_lookback=getattr(args, 'stability_loss_lookback', 8),
+        accumulation_steps=args.accumulation_steps, 
     )
     print(f"Best MCC = {study.best_value:.4f}")
     print(f"Best params: {study.best_params}")
@@ -71,6 +72,7 @@ def _cmd_train(args):
         normalization_type=args.normalization,
         use_residual_classifier=args.residual_classifier,
         val_batch_size=getattr(args, 'val_batch_size', None),
+        accumulation_steps=args.accumulation_steps,
         # any extra kwargs you expose can be passed through here
     )
     print("Training finished; artefacts saved to", results["output_dir"])
@@ -159,6 +161,7 @@ def build_parser() -> argparse.ArgumentParser:
     o.add_argument("--stability-min-epoch", type=int, default=8, help="Minimum epoch to consider for stability filtering")
     o.add_argument("--stability-loss-margin", type=float, default=0.15, help="Allowed loss increase fraction for stability check")
     o.add_argument("--stability-loss-lookback", type=int, default=8, help="Number of epochs to look back for loss comparison")
+    o.add_argument("--accumulation-steps", type=int, default=4, help="Gradient accumulation steps (default: 4)")
     o.set_defaults(func=_cmd_optimize)
 
     # train ------------------------------------------------------------
@@ -173,6 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--normalization", choices=["none", "layer_norm", "l2_norm"], default="none", help="Input normalization type") 
     t.add_argument("--residual-classifier", action="store_true", help="Use residual connections in classifier")
     t.add_argument("--val-batch-size", type=int, default=None, help="Validation batch size (if None, uses same as training)")
+    t.add_argument("--accumulation-steps", type=int, default=4, help="Gradient accumulation steps (default: 4)")
     t.set_defaults(func=_cmd_train)
 
     # predict ----------------------------------------------------------

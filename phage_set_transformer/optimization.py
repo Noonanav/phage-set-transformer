@@ -107,6 +107,7 @@ def _cv_objective(
     stability_min_epoch: int = 8,
     stability_loss_margin: float = 0.15,
     stability_loss_lookback: int = 8,
+    accumulation_steps: int = 4,
 ) -> float:
     """Return **stability-aware median MCC** across *n_folds* folds (prunable)."""
     params = _suggest_params(trial, search_config) 
@@ -172,6 +173,7 @@ def _cv_objective(
             warmup_ratio=params["warmup_ratio"],
             weight_decay=params["weight_decay"],
             device=device,
+            accumulation_steps=accumulation_steps, 
         )
 
         # Apply stability filtering to fold result
@@ -219,6 +221,7 @@ def run_cv_optimization(
     stability_min_epoch: int = 8,
     stability_loss_margin: float = 0.15,
     stability_loss_lookback: int = 8,
+    accumulation_steps: int = 4, 
 ) -> Tuple[optuna.Study, Dict[str, Any]]:
     """
     Run an Optuna hyper-parameter search **with k-fold CV per trial** and then
@@ -300,6 +303,7 @@ def run_cv_optimization(
             stability_min_epoch=stability_min_epoch,
             stability_loss_margin=stability_loss_margin,
             stability_loss_lookback=stability_loss_lookback,
+            accumulation_steps=accumulation_steps,
         ),
         n_trials=trials_to_run,
         show_progress_bar=True,
@@ -322,6 +326,7 @@ def run_cv_optimization(
             base_dir=base_dir,
             random_state=random_state,
             val_batch_size=val_batch_size,
+            accumulation_steps=accumulation_steps, 
         )
         _log.info("Final retraining completed")
     else:
@@ -356,6 +361,7 @@ def _retrain_best_params(
     base_dir: Path,
     random_state: int,
     val_batch_size: Optional[int] = None,
+    accumulation_steps: int = 4, 
 ) -> Dict[str, Any]:
     """
     Retrain best hyper-parameter set `n_runs` times with different seeds,
@@ -412,6 +418,7 @@ def _retrain_best_params(
             weight_decay=best_params["weight_decay"],
             device=device,               # default cuda/auto
             metrics_dir=str(base_dir / "training_metrics"),
+            accumulation_steps=accumulation_steps, 
         )
 
         # CREATE THE SEED-SPECIFIC EVALUATION DIRECTORY
